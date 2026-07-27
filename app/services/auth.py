@@ -31,3 +31,32 @@ def register_user(
     )
 
     return user
+
+
+from app.core.security import (
+    create_access_token,
+    hash_password,
+    verify_password,
+)
+
+
+def login_user(
+    db: Session,
+    email: str,
+    password: str,
+) -> str:
+    user = get_user_by_email(
+        db,
+        email,
+    )
+
+    if not user:
+        raise ValueError("Invalid email or password")
+
+    if not verify_password(
+        password,
+        user.password_hash,
+    ):
+        raise ValueError("Invalid email or password")
+
+    return create_access_token(user.email)
