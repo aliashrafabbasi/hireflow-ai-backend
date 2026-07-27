@@ -5,6 +5,10 @@ from app.repositories.user import (
     create_user,
     get_user_by_email
 )
+from app.core.security import (
+    create_access_token,
+    verify_password,
+)
 from app.schemas.user import UserCreate
 
 
@@ -33,18 +37,14 @@ def register_user(
     return user
 
 
-from app.core.security import (
-    create_access_token,
-    hash_password,
-    verify_password,
-)
+
 
 
 def login_user(
     db: Session,
     email: str,
     password: str,
-) -> str:
+):
     user = get_user_by_email(
         db,
         email,
@@ -59,4 +59,13 @@ def login_user(
     ):
         raise ValueError("Invalid email or password")
 
-    return create_access_token(user.email)
+    access_token = create_access_token(
+        user.email,
+    )
+
+    return {
+        "message": "Login successful",
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user,
+    }

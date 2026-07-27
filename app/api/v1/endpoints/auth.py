@@ -3,17 +3,20 @@ from sqlalchemy.orm import Session
 
 from app.dependencies.database import get_db
 from app.schemas.user import (
-    TokenResponse,
     UserCreate,
     UserLogin,
     UserResponse,
+    LoginResponse,
 )
 from app.services.auth import (
-    login_user,
     register_user,
+    login_user,
 )
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+router = APIRouter(
+    prefix="/auth",
+    tags=["Authentication"],
+)
 
 
 @router.post(
@@ -33,23 +36,20 @@ def register(
             detail=str(e),
         )
 
+
 @router.post(
     "/login",
-    response_model=TokenResponse,
+    response_model=LoginResponse,
 )
 def login(
     user: UserLogin,
     db: Session = Depends(get_db),
 ):
     try:
-        token = login_user(
+        return login_user(
             db,
             user.email,
             user.password,
-        )
-
-        return TokenResponse(
-            access_token=token,
         )
 
     except ValueError as e:
