@@ -6,6 +6,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import (
@@ -72,6 +73,21 @@ class Resume(Base):
         DateTime,
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
+    )
+
+    extracted_text: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    processing_status: Mapped[str] = mapped_column(
+        String(30),
+        default="pending",
+    )
+
+    parsed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
     )
 
     user: Mapped["User"] = relationship(

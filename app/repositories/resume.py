@@ -16,9 +16,26 @@ def create_resume(
         file_type=file_data["file_type"],
         file_size=file_data["file_size"],
         status="uploaded",
+        processing_status="pending",
+        extracted_text=None,
+        parsed_at=None,
     )
 
     db.add(resume)
+    db.commit()
+    db.refresh(resume)
+
+    return resume
+
+
+def update_resume_parsing(
+    db: Session,
+    resume: Resume,
+    extracted_text: str,
+):
+    resume.extracted_text = extracted_text
+    resume.processing_status = "completed"
+
     db.commit()
     db.refresh(resume)
 
