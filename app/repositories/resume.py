@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from app.models.resume import Resume
@@ -35,6 +37,7 @@ def update_resume_parsing(
 ):
     resume.extracted_text = extracted_text
     resume.processing_status = "completed"
+    resume.parsed_at = datetime.utcnow()
 
     db.commit()
     db.refresh(resume)

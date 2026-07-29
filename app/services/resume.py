@@ -1,9 +1,12 @@
 from fastapi import UploadFile
-
 from sqlalchemy.orm import Session
 
 from app.core.file import save_uploaded_file
-from app.repositories.resume import create_resume
+from app.repositories.resume import (
+    create_resume,
+    update_resume_parsing,
+)
+from app.services.resume_parser import process_resume
 
 
 def upload_resume(
@@ -17,6 +20,11 @@ def upload_resume(
         db=db,
         user_id=user.id,
         file_data=file_data,
+    )
+
+    resume = process_resume(
+        db=db,
+        resume=resume,
     )
 
     return resume
