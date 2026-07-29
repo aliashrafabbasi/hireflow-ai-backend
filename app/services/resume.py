@@ -1,0 +1,22 @@
+from fastapi import UploadFile
+
+from sqlalchemy.orm import Session
+
+from app.core.file import save_uploaded_file
+from app.repositories.resume import create_resume
+
+
+def upload_resume(
+    db: Session,
+    user,
+    file: UploadFile,
+):
+    file_data = save_uploaded_file(file)
+
+    resume = create_resume(
+        db=db,
+        user_id=user.id,
+        file_data=file_data,
+    )
+
+    return resume
