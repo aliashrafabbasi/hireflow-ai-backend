@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models.resume import Resume
+from uuid import UUID
 
 
 def create_resume(
@@ -43,3 +44,21 @@ def update_resume_parsing(
     db.refresh(resume)
 
     return resume
+
+
+
+def get_resumes(
+    db: Session,
+):
+    return db.query(Resume).all()
+
+
+def get_resume_by_id(
+    db: Session,
+    resume_id: UUID,
+):
+    return (
+        db.query(Resume)
+        .filter(Resume.id == resume_id)
+        .first()
+    )

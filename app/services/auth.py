@@ -1,43 +1,75 @@
 from sqlalchemy.orm import Session
 
-from app.core.security import hash_password
-from app.repositories.user import (
-    create_user,
-    get_user_by_email
-)
 from app.core.security import (
     create_access_token,
+    hash_password,
     verify_password,
 )
+from app.repositories import user as user_repository
 from app.schemas.user import UserCreate
 
 
-def register_user(
+def register_admin(
     db: Session,
-    user_data: UserCreate
+    user_data: UserCreate,
 ):
-    existing_user = get_user_by_email(
-        db,
-        user_data.email
-    )
+    if user_repository.admin_exists(db):
+        raise ValueError("Admin already exists")
 
+    existing_user = user_repository.get_user_by_email(
+        db,
+        user_data.email,
+    )
     if existing_user:
         raise ValueError("Email already registered")
 
-    hashed_password = hash_password(
-        user_data.password
-    )
-
-    user = create_user(
+    return user_repository.create_user(
         db,
         user_data,
-        hashed_password
+        hash_password(user_data.password),
+        role="admin",
     )
 
-    return user
+
+def create_hr_user(
+    db: Session,
+    user_data: UserCreate,
+):
+    existing_user = user_repository.get_user_by_email(
+        db,
+        user_data.email,
+    )
+    if existing_user:
+        raise ValueError("Email already registered")
+
+    return user_repository.create_user(
+        db,
+        user_data,
+        hash_password(user_data.password),
+        role="hr",
+    )
 
 
+def list_hr_users(db: Session):
+    return user_repository.get_hr_users(db)
 
+
+def delete_hr_user(
+    db: Session,
+    user_id,
+):
+    user = user_repository.get_user_by_id(db, user_id)
+
+    if not user:
+        raise ValueError("User not found")
+
+    if user.role != "hr":
+        raise PermissionError("Only HR users can be deleted")
+
+    if not user.is_active:
+        raise ValueError("HR user is already deactivated")
+
+    return user_repository.soft_delete_user(db, user)
 
 
 def login_user(
@@ -45,23 +77,18 @@ def login_user(
     email: str,
     password: str,
 ):
-    user = get_user_by_email(
-        db,
-        email,
-    )
+    user = user_repository.get_user_by_email(db, email)
 
     if not user:
         raise ValueError("Invalid email or password")
 
-    if not verify_password(
-        password,
-        user.password_hash,
-    ):
+    if not user.is_active:
+        raise ValueError("Account is inactive")
+
+    if not verify_password(password, user.password_hash):
         raise ValueError("Invalid email or password")
 
-    access_token = create_access_token(
-        user.email,
-    )
+    access_token = create_access_token(user.email)
 
     return {
         "message": "Login successful",

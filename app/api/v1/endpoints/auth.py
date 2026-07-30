@@ -9,7 +9,7 @@ from app.schemas.user import (
     LoginResponse,
 )
 from app.services.auth import (
-    register_user,
+    register_admin,
     login_user,
 )
 
@@ -20,16 +20,16 @@ router = APIRouter(
 
 
 @router.post(
-    "/register",
+    "/register-admin",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def register(
+def register_admin_endpoint(
     user: UserCreate,
     db: Session = Depends(get_db),
 ):
     try:
-        return register_user(db, user)
+        return register_admin(db, user)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -51,7 +51,6 @@ def login(
             user.email,
             user.password,
         )
-
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

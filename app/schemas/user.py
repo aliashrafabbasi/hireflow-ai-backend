@@ -8,7 +8,6 @@ class UserCreate(BaseModel):
     full_name: str
     email: EmailStr
     password: str
-    role: str = "hr"
 
 
 class UserLogin(BaseModel):
@@ -33,3 +32,7 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+
+class MessageResponse(BaseModel):
+    message: str

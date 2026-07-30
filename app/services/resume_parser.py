@@ -28,14 +28,14 @@ def process_resume(
         resume.processing_status = "completed"
         resume.parsed_at = datetime.utcnow()
 
-        db.commit()
-        db.refresh(resume)
-
         save_resume_skills(
-           db=db,
+            db=db,
             resume_id=resume.id,
             skills=analysis.skills,
         )
+
+        db.commit()
+        db.refresh(resume)
 
         return resume
 

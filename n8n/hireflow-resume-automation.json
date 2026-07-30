@@ -1,0 +1,241 @@
+{
+  "name": "HireFlow - Resume Email to Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {},
+        "options": {
+          "downloadAttachments": true,
+          "dataPropertyAttachmentsPrefixName": "attachment_"
+        }
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300],
+      "notesInFlow": true,
+      "notes": "Select your Gmail OAuth credential. Downloads email attachments."
+    },
+    {
+      "parameters": {
+        "jsCode": "function formatEmailFrom(from) {\n  if (!from) return 'Unknown sender';\n  if (typeof from === 'string') return from;\n  if (from.text) return from.text;\n  if (Array.isArray(from.value) && from.value[0]) {\n    const v = from.value[0];\n    if (v.name && v.address) return `${v.name} <${v.address}>`;\n    return v.address || v.name || 'Unknown sender';\n  }\n  return 'Unknown sender';\n}\n\nfunction candidateFromFileName(fileName) {\n  if (!fileName) return 'Unknown Candidate';\n  return fileName\n    .replace(/\\.(pdf|docx?|PDF|DOCX?)$/,'')\n    .replace(/[-_]+/g, ' ')\n    .replace(/\\bresume\\b/gi, '')\n    .replace(/\\bcv\\b/gi, '')\n    .replace(/\\s+/g, ' ')\n    .trim() || 'Unknown Candidate';\n}\n\nconst items = [];\n\nfor (const item of $input.all()) {\n  const binary = item.binary || {};\n  const keys = Object.keys(binary);\n\n  for (const key of keys) {\n    if (!key.startsWith('attachment_')) continue;\n\n    const file = binary[key];\n    const lowerName = (file.fileName || key).toLowerCase();\n    const mime = (file.mimeType || '').toLowerCase();\n\n    const isResume =\n      lowerName.endsWith('.pdf') ||\n      lowerName.endsWith('.docx') ||\n      lowerName.endsWith('.doc') ||\n      mime.includes('pdf') ||\n      mime.includes('word') ||\n      mime.includes('document');\n\n    if (!isResume) continue;\n\n    const fileName = file.fileName || key;\n\n    items.push({\n      json: {\n        emailSubject: item.json.subject || '(no subject)',\n        emailFrom: formatEmailFrom(item.json.from || item.json.From),\n        fileName,\n        candidateName: candidateFromFileName(fileName),\n      },\n      binary: {\n        data: file,\n      },\n    });\n  }\n}\n\nreturn items;"
+      },
+      "id": "extract-resume",
+      "name": "Extract Resume Attachments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/v1/auth/login",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"email\": \"YOUR_ADMIN_EMAIL\",\n  \"password\": \"YOUR_PASSWORD\"\n}",
+        "options": {}
+      },
+      "id": "login",
+      "name": "Login HireFlow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300],
+      "notesInFlow": true,
+      "notes": "IMPORTANT: Replace YOUR_ADMIN_EMAIL and YOUR_PASSWORD with real HireFlow login"
+    },
+    {
+      "parameters": {
+        "jsCode": "const token = $('Login HireFlow').first().json.access_token;\n\nif (!token) {\n  throw new Error('Login failed — no access_token. Check email/password in Login HireFlow node.');\n}\n\nreturn $('Extract Resume Attachments').all().map((item) => ({\n  json: {\n    ...item.json,\n    access_token: token,\n  },\n  binary: item.binary,\n}));"
+      },
+      "id": "attach-token",
+      "name": "Attach Token + Resume",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/v1/resumes/upload",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "upload-resume",
+      "name": "Upload Resume",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://127.0.0.1:8000/api/v1/jobs",
+        "options": {}
+      },
+      "id": "get-jobs",
+      "name": "Get Jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const resume = $('Upload Resume').item.json;\nconst emailMeta = $('Attach Token + Resume').item.json;\nconst jobsRaw = $input.first().json;\nconst jobList = Array.isArray(jobsRaw) ? jobsRaw : [jobsRaw];\n\nreturn jobList.map((job) => ({\n  json: {\n    resume_id: resume.id,\n    job_id: job.id,\n    job_title: job.title,\n    company: job.company,\n    fileName: emailMeta.fileName,\n    emailSubject: emailMeta.emailSubject,\n    emailFrom: emailMeta.emailFrom,\n    candidateName: emailMeta.candidateName,\n  },\n}));"
+      },
+      "id": "prepare-matches",
+      "name": "Prepare Match Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8000/api/v1/match/{{ $json.resume_id }}/{{ $json.job_id }}",
+        "options": {}
+      },
+      "id": "match-job",
+      "name": "Match Resume to Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prepared = $('Prepare Match Items').all();\nconst matches = $input.all();\n\nreturn matches.map((item, i) => {\n  const meta = prepared[i]?.json || {};\n  const m = item.json;\n\n  return {\n    json: {\n      resume_id: m.resume_id || meta.resume_id,\n      job_id: m.job_id || meta.job_id,\n      job_title: meta.job_title,\n      company: meta.company,\n      fileName: meta.fileName,\n      emailFrom: meta.emailFrom,\n      emailSubject: meta.emailSubject,\n      candidateName: meta.candidateName,\n      match_score: m.match_score,\n      matched_skills: m.matched_skills || [],\n      missing_skills: m.missing_skills || [],\n      explanation: m.explanation || '',\n    },\n  };\n});"
+      },
+      "id": "merge-results",
+      "name": "Merge Match Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2080, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "score-check",
+              "leftValue": "={{ $json.match_score }}",
+              "rightValue": 50,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-score",
+      "name": "Score >= 50",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [2340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "function formatEmailFrom(from) {\n  if (!from) return 'Unknown sender';\n  if (typeof from === 'string') return from;\n  if (from.text) return from.text;\n  if (Array.isArray(from.value) && from.value[0]) {\n    const v = from.value[0];\n    if (v.name && v.address) return `${v.name} <${v.address}>`;\n    return v.address || v.name || 'Unknown sender';\n  }\n  return 'Unknown sender';\n}\n\nfunction candidateFromFileName(fileName) {\n  if (!fileName) return 'Unknown Candidate';\n  return fileName\n    .replace(/\\.(pdf|docx?|PDF|DOCX?)$/,'')\n    .replace(/[-_]+/g, ' ')\n    .replace(/\\bresume\\b/gi, '')\n    .replace(/\\bcv\\b/gi, '')\n    .replace(/\\s+/g, ' ')\n    .trim() || 'Unknown Candidate';\n}\n\nconst rows = $input.all().map((i) => i.json);\n\nif (rows.length === 0) {\n  return [];\n}\n\nrows.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));\n\nconst first = rows[0];\nconst candidateName = first.candidateName || candidateFromFileName(first.fileName);\nconst sender = formatEmailFrom(first.emailFrom);\nconst top = rows[0];\nconst others = rows.slice(1);\n\nconst topMatched = (top.matched_skills || []).slice(0, 10).join(', ') || 'N/A';\nconst topMissing = (top.missing_skills || []).slice(0, 8).join(', ') || 'None';\n\nconst otherLines = others.map((r, idx) => {\n  return `${idx + 2}. *${r.job_title}* @ ${r.company} — *${r.match_score}%*`;\n});\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `👋 *Dear HR Team,*`,\n  ``,\n  `A new candidate resume just landed in HireFlow and has been screened against our open roles.`,\n  ``,\n  `*Candidate:* ${candidateName}`,\n  `*Resume file:* ${first.fileName || 'N/A'}`,\n  `*Received from:* ${sender}`,\n  `*Email subject:* ${first.emailSubject || '(no subject)'}`,\n  `*Resume ID:* \\`${first.resume_id}\\``,\n  ``,\n  `*Best match*`,\n  `• *${top.job_title}* @ ${top.company}`,\n  `  Match score: *${top.match_score}%*`,\n  `  Matched skills: ${topMatched}`,\n  `  Missing skills: ${topMissing}`,\n  top.explanation ? `  Summary: ${top.explanation}` : null,\n  ``,\n  others.length ? `*Other matches (score ≥ 50):*` : null,\n  ...otherLines,\n  ``,\n  `_Please review this candidate and proceed with shortlisting if it looks like a fit._`,\n].filter((line) => line !== null).join('\\n');\n\nreturn [{\n  json: {\n    text,\n    count: rows.length,\n    top_score: top.match_score,\n    candidateName,\n  },\n}];"
+      },
+      "id": "format-slack",
+      "name": "Format Slack Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2600, 300]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "new-channel"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "id": "slack-notify",
+      "name": "Notify HR on Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [2860, 300],
+      "notesInFlow": true,
+      "notes": "Add Slack credential. Channel: new-channel"
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [[{ "node": "Extract Resume Attachments", "type": "main", "index": 0 }]]
+    },
+    "Extract Resume Attachments": {
+      "main": [[{ "node": "Login HireFlow", "type": "main", "index": 0 }]]
+    },
+    "Login HireFlow": {
+      "main": [[{ "node": "Attach Token + Resume", "type": "main", "index": 0 }]]
+    },
+    "Attach Token + Resume": {
+      "main": [[{ "node": "Upload Resume", "type": "main", "index": 0 }]]
+    },
+    "Upload Resume": {
+      "main": [[{ "node": "Get Jobs", "type": "main", "index": 0 }]]
+    },
+    "Get Jobs": {
+      "main": [[{ "node": "Prepare Match Items", "type": "main", "index": 0 }]]
+    },
+    "Prepare Match Items": {
+      "main": [[{ "node": "Match Resume to Job", "type": "main", "index": 0 }]]
+    },
+    "Match Resume to Job": {
+      "main": [[{ "node": "Merge Match Results", "type": "main", "index": 0 }]]
+    },
+    "Merge Match Results": {
+      "main": [[{ "node": "Score >= 50", "type": "main", "index": 0 }]]
+    },
+    "Score >= 50": {
+      "main": [[{ "node": "Format Slack Message", "type": "main", "index": 0 }]]
+    },
+    "Format Slack Message": {
+      "main": [[{ "node": "Notify HR on Slack", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

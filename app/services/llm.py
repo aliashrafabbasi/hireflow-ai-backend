@@ -1,5 +1,5 @@
 import json
-
+from app.prompts.job_prompt import JOB_ANALYSIS_PROMPT
 from groq import Groq
 
 from app.core.config import settings
@@ -25,6 +25,30 @@ def analyze_resume(
             {
                 "role": "user",
                 "content": resume_text,
+            },
+        ],
+        temperature=0,
+        response_format={
+            "type": "json_object",
+        },
+    )
+
+    content = response.choices[0].message.content
+
+    return json.loads(content)
+def analyze_job_description(
+    job_description: str,
+) -> dict:
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {
+                "role": "system",
+                "content": JOB_ANALYSIS_PROMPT,
+            },
+            {
+                "role": "user",
+                "content": job_description,
             },
         ],
         temperature=0,
