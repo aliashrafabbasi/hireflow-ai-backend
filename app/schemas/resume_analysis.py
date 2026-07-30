@@ -7,6 +7,17 @@ class ExperienceItem(BaseModel):
     duration: str
 
 
+class EducationItem(BaseModel):
+    degree: str
+    institution: str
+    duration: str
+
+
+class ProjectItem(BaseModel):
+    name: str
+    tech_stack: list[str]
+
+
 class ResumeAnalysis(BaseModel):
     candidate_name: str
     email: str
@@ -14,7 +25,7 @@ class ResumeAnalysis(BaseModel):
     title: str
 
     skills: list[str]
-    education: list[str]
-    projects: list[str]
+    education: list[EducationItem]
+    projects: list[ProjectItem]
 
     experience: list[ExperienceItem]

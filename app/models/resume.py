@@ -15,7 +15,13 @@ from sqlalchemy.orm import (
     relationship,
 )
 
+from typing import TYPE_CHECKING
+
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
+    from app.models.resume_skill import ResumeSkill
 
 
 class Resume(Base):
@@ -92,4 +98,8 @@ class Resume(Base):
 
     user: Mapped["User"] = relationship(
         back_populates="resumes",
+    )
+    skills: Mapped[list["ResumeSkill"]] = relationship(
+        back_populates="resume",
+        cascade="all, delete-orphan",
     )

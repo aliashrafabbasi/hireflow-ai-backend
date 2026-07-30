@@ -1,10 +1,11 @@
 from datetime import datetime
 
 import fitz
-
 from sqlalchemy.orm import Session
 
 from app.models.resume import Resume
+from app.services.resume_analyzer import analyze_resume_text
+from app.services.resume_skill import save_resume_skills
 
 
 def process_resume(
@@ -19,12 +20,22 @@ def process_resume(
         for page in doc:
             extracted_text += page.get_text()
 
+        doc.close()
+
+        analysis = analyze_resume_text(extracted_text)
+
         resume.extracted_text = extracted_text
         resume.processing_status = "completed"
         resume.parsed_at = datetime.utcnow()
 
         db.commit()
         db.refresh(resume)
+
+        save_resume_skills(
+           db=db,
+            resume_id=resume.id,
+            skills=analysis.skills,
+        )
 
         return resume
 

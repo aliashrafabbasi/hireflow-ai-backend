@@ -1,18 +1,33 @@
 RESUME_ANALYSIS_PROMPT = """
 You are an expert AI Resume Analyzer.
 
-Analyze the resume text and return ONLY valid JSON.
+Analyze the resume and return ONLY valid JSON.
 
-Extract the following information:
+Return this EXACT structure.
 
 {
   "candidate_name": "",
   "email": "",
   "phone": "",
   "title": "",
+
   "skills": [],
-  "education": [],
-  "projects": [],
+
+  "education": [
+    {
+      "degree": "",
+      "institution": "",
+      "duration": ""
+    }
+  ],
+
+  "projects": [
+    {
+      "name": "",
+      "tech_stack": []
+    }
+  ],
+
   "experience": [
     {
       "company": "",
@@ -23,8 +38,16 @@ Extract the following information:
 }
 
 Rules:
-- Return only JSON.
-- Do not include markdown.
-- Do not explain anything.
-- If a field is missing, return an empty string or empty list.
+
+- Return ONLY JSON.
+- No markdown.
+- No explanation.
+- tech_stack MUST always be an array of strings.
+- education MUST always contain objects having:
+  degree, institution, duration.
+- projects MUST always contain objects having:
+  name, tech_stack.
+- experience MUST always contain objects having:
+  company, role, duration.
+- If information is unavailable, use empty strings or empty arrays.
 """
