@@ -4,11 +4,7 @@
     {
       "parameters": {
         "pollTimes": {
-          "item": [
-            {
-              "mode": "everyMinute"
-            }
-          ]
+          "item": [{ "mode": "everyMinute" }]
         },
         "simple": false,
         "filters": {},
@@ -49,8 +45,11 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [520, 300],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
       "notesInFlow": true,
-      "notes": "IMPORTANT: Replace YOUR_ADMIN_EMAIL and YOUR_PASSWORD with real HireFlow login"
+      "notes": "IMPORTANT: Replace YOUR_ADMIN_EMAIL and YOUR_PASSWORD"
     },
     {
       "parameters": {
@@ -92,90 +91,58 @@
       "name": "Upload Resume",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1040, 300]
+      "position": [1040, 300],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
-        "url": "http://127.0.0.1:8000/api/v1/jobs",
-        "options": {}
+        "jsCode": "const token = $('Attach Token + Resume').first().json.access_token;\nconst resume = $input.first().json;\n\nif (!resume?.id) {\n  throw new Error('Upload failed — no resume id');\n}\n\nreturn [{\n  json: {\n    ...resume,\n    access_token: token,\n    fileName: $('Attach Token + Resume').first().json.fileName,\n    emailFrom: $('Attach Token + Resume').first().json.emailFrom,\n    emailSubject: $('Attach Token + Resume').first().json.emailSubject,\n    candidateName: $('Attach Token + Resume').first().json.candidateName,\n  },\n}];"
       },
-      "id": "get-jobs",
-      "name": "Get Jobs",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1300, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const resume = $('Upload Resume').item.json;\nconst emailMeta = $('Attach Token + Resume').item.json;\nconst jobsRaw = $input.first().json;\nconst jobList = Array.isArray(jobsRaw) ? jobsRaw : [jobsRaw];\n\nreturn jobList.map((job) => ({\n  json: {\n    resume_id: resume.id,\n    job_id: job.id,\n    job_title: job.title,\n    company: job.company,\n    fileName: emailMeta.fileName,\n    emailSubject: emailMeta.emailSubject,\n    emailFrom: emailMeta.emailFrom,\n    candidateName: emailMeta.candidateName,\n  },\n}));"
-      },
-      "id": "prepare-matches",
-      "name": "Prepare Match Items",
+      "id": "prepare-match",
+      "name": "Prepare Auto Match",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1560, 300]
+      "position": [1300, 240]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "=http://127.0.0.1:8000/api/v1/match/{{ $json.resume_id }}/{{ $json.job_id }}",
-        "options": {}
-      },
-      "id": "match-job",
-      "name": "Match Resume to Job",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1820, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const prepared = $('Prepare Match Items').all();\nconst matches = $input.all();\n\nreturn matches.map((item, i) => {\n  const meta = prepared[i]?.json || {};\n  const m = item.json;\n\n  return {\n    json: {\n      resume_id: m.resume_id || meta.resume_id,\n      job_id: m.job_id || meta.job_id,\n      job_title: meta.job_title,\n      company: meta.company,\n      fileName: meta.fileName,\n      emailFrom: meta.emailFrom,\n      emailSubject: meta.emailSubject,\n      candidateName: meta.candidateName,\n      match_score: m.match_score,\n      matched_skills: m.matched_skills || [],\n      missing_skills: m.missing_skills || [],\n      explanation: m.explanation || '',\n    },\n  };\n});"
-      },
-      "id": "merge-results",
-      "name": "Merge Match Results",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [2080, 300]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
+        "url": "=http://127.0.0.1:8000/api/v1/match/{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "id": "score-check",
-              "leftValue": "={{ $json.match_score }}",
-              "rightValue": 50,
-              "operator": {
-                "type": "number",
-                "operation": "gte"
-              }
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
             }
-          ],
-          "combinator": "and"
+          ]
         },
         "options": {}
       },
-      "id": "filter-score",
-      "name": "Score >= 50",
-      "type": "n8n-nodes-base.filter",
-      "typeVersion": 2.2,
-      "position": [2340, 300]
+      "id": "auto-match",
+      "name": "Auto Match Best Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 240],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput",
+      "notesInFlow": true,
+      "notes": "Auth required. Uses admin threshold for qualified_jobs."
     },
     {
       "parameters": {
-        "jsCode": "function formatEmailFrom(from) {\n  if (!from) return 'Unknown sender';\n  if (typeof from === 'string') return from;\n  if (from.text) return from.text;\n  if (Array.isArray(from.value) && from.value[0]) {\n    const v = from.value[0];\n    if (v.name && v.address) return `${v.name} <${v.address}>`;\n    return v.address || v.name || 'Unknown sender';\n  }\n  return 'Unknown sender';\n}\n\nfunction candidateFromFileName(fileName) {\n  if (!fileName) return 'Unknown Candidate';\n  return fileName\n    .replace(/\\.(pdf|docx?|PDF|DOCX?)$/,'')\n    .replace(/[-_]+/g, ' ')\n    .replace(/\\bresume\\b/gi, '')\n    .replace(/\\bcv\\b/gi, '')\n    .replace(/\\s+/g, ' ')\n    .trim() || 'Unknown Candidate';\n}\n\nconst rows = $input.all().map((i) => i.json);\n\nif (rows.length === 0) {\n  return [];\n}\n\nrows.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));\n\nconst first = rows[0];\nconst candidateName = first.candidateName || candidateFromFileName(first.fileName);\nconst sender = formatEmailFrom(first.emailFrom);\nconst top = rows[0];\nconst others = rows.slice(1);\n\nconst topMatched = (top.matched_skills || []).slice(0, 10).join(', ') || 'N/A';\nconst topMissing = (top.missing_skills || []).slice(0, 8).join(', ') || 'None';\n\nconst otherLines = others.map((r, idx) => {\n  return `${idx + 2}. *${r.job_title}* @ ${r.company} — *${r.match_score}%*`;\n});\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `👋 *Dear HR Team,*`,\n  ``,\n  `A new candidate resume just landed in HireFlow and has been screened against our open roles.`,\n  ``,\n  `*Candidate:* ${candidateName}`,\n  `*Resume file:* ${first.fileName || 'N/A'}`,\n  `*Received from:* ${sender}`,\n  `*Email subject:* ${first.emailSubject || '(no subject)'}`,\n  `*Resume ID:* \\`${first.resume_id}\\``,\n  ``,\n  `*Best match*`,\n  `• *${top.job_title}* @ ${top.company}`,\n  `  Match score: *${top.match_score}%*`,\n  `  Matched skills: ${topMatched}`,\n  `  Missing skills: ${topMissing}`,\n  top.explanation ? `  Summary: ${top.explanation}` : null,\n  ``,\n  others.length ? `*Other matches (score ≥ 50):*` : null,\n  ...otherLines,\n  ``,\n  `_Please review this candidate and proceed with shortlisting if it looks like a fit._`,\n].filter((line) => line !== null).join('\\n');\n\nreturn [{\n  json: {\n    text,\n    count: rows.length,\n    top_score: top.match_score,\n    candidateName,\n  },\n}];"
+        "jsCode": "const data = $input.first().json;\nconst emailMeta = $('Prepare Auto Match').first().json;\n\nconst candidateName =\n  data.candidate_name ||\n  emailMeta.candidateName ||\n  'Unknown Candidate';\n\nconst best = data.best_job || {};\nconst qualified = Array.isArray(data.qualified_jobs) ? data.qualified_jobs : [];\nconst threshold = data.score_threshold ?? 50;\n\nconst bestMatched = (best.matched_skills || []).slice(0, 10).join(', ') || 'N/A';\nconst bestMissing = (best.missing_skills || []).slice(0, 8).join(', ') || 'None';\n\nconst jobLines = qualified.map((j, idx) => {\n  return `${idx + 1}. *${j.job_title}* @ ${j.company} — *${j.match_score}%*`;\n});\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `👋 *Dear HR Team,*`,\n  ``,\n  `A new candidate resume just landed in HireFlow and has been screened against our open roles.`,\n  ``,\n  `*Candidate:* ${candidateName}`,\n  `*Resume file:* ${data.resume_filename || emailMeta.fileName || 'N/A'}`,\n  `*Received from:* ${emailMeta.emailFrom || 'N/A'}`,\n  `*Email subject:* ${emailMeta.emailSubject || '(no subject)'}`,\n  `*Resume ID:* \\`${data.resume_id || ''}\\``,\n  ``,\n  `*Best matched job*`,\n  `• *${best.job_title || 'N/A'}* @ ${best.company || 'N/A'}`,\n  `  Match score: *${best.match_score ?? 'N/A'}%*`,\n  `  Matched skills: ${bestMatched}`,\n  `  Missing skills: ${bestMissing}`,\n  best.summary ? `  Summary: ${best.summary}` : null,\n  ``,\n  `*Jobs this candidate qualifies for (score ≥ ${threshold}):*`,\n  ...(jobLines.length ? jobLines : ['None']),\n  ``,\n  `_Please review this candidate and proceed with shortlisting if it looks like a fit._`,\n].filter((line) => line !== null).join('\\n');\n\nreturn [{\n  json: {\n    text,\n    candidateName,\n    best_score: best.match_score,\n    qualified_count: qualified.length,\n  },\n}];"
       },
       "id": "format-slack",
       "name": "Format Slack Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2600, 300]
+      "position": [1820, 240]
     },
     {
       "parameters": {
@@ -192,9 +159,36 @@
       "name": "Notify HR on Slack",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.3,
-      "position": [2860, 300],
+      "position": [2080, 240],
       "notesInFlow": true,
-      "notes": "Add Slack credential. Channel: new-channel"
+      "notes": "Slack credential + channel: new-channel"
+    },
+    {
+      "parameters": {
+        "jsCode": "const err = $input.first().json;\nconst msg = err.message || err.error || JSON.stringify(err);\nconst node = err.node?.name || err.node || 'Unknown node';\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `🚨 *HireFlow Automation Failed*`,\n  ``,\n  `*Node:* ${node}`,\n  `*Error:* ${msg}`,\n  `*Time:* ${new Date().toISOString()}`,\n  ``,\n  `_Please check n8n Executions and backend logs._`,\n].join('\\n');\n\nreturn [{ json: { text } }];"
+      },
+      "id": "format-error",
+      "name": "Format Error Slack",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 480]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "new-channel"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "id": "slack-error",
+      "name": "Notify Error on Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [1820, 480]
     }
   ],
   "connections": {
@@ -211,25 +205,25 @@
       "main": [[{ "node": "Upload Resume", "type": "main", "index": 0 }]]
     },
     "Upload Resume": {
-      "main": [[{ "node": "Get Jobs", "type": "main", "index": 0 }]]
+      "main": [
+        [{ "node": "Prepare Auto Match", "type": "main", "index": 0 }],
+        [{ "node": "Format Error Slack", "type": "main", "index": 0 }]
+      ]
     },
-    "Get Jobs": {
-      "main": [[{ "node": "Prepare Match Items", "type": "main", "index": 0 }]]
+    "Prepare Auto Match": {
+      "main": [[{ "node": "Auto Match Best Job", "type": "main", "index": 0 }]]
     },
-    "Prepare Match Items": {
-      "main": [[{ "node": "Match Resume to Job", "type": "main", "index": 0 }]]
-    },
-    "Match Resume to Job": {
-      "main": [[{ "node": "Merge Match Results", "type": "main", "index": 0 }]]
-    },
-    "Merge Match Results": {
-      "main": [[{ "node": "Score >= 50", "type": "main", "index": 0 }]]
-    },
-    "Score >= 50": {
-      "main": [[{ "node": "Format Slack Message", "type": "main", "index": 0 }]]
+    "Auto Match Best Job": {
+      "main": [
+        [{ "node": "Format Slack Message", "type": "main", "index": 0 }],
+        [{ "node": "Format Error Slack", "type": "main", "index": 0 }]
+      ]
     },
     "Format Slack Message": {
       "main": [[{ "node": "Notify HR on Slack", "type": "main", "index": 0 }]]
+    },
+    "Format Error Slack": {
+      "main": [[{ "node": "Notify Error on Slack", "type": "main", "index": 0 }]]
     }
   },
   "settings": {

@@ -3,7 +3,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.dependencies.auth import get_current_user
+from app.core.exceptions import LLMRateLimitError
+from app.dependencies.auth import get_current_staff, get_current_user
 from app.db.session import get_db
 from app.schemas.resume import ResumeResponse
 from app.services import resume as resume_service
@@ -24,11 +25,14 @@ def upload_resume(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    return resume_service.upload_resume(
-        db=db,
-        user=current_user,
-        file=file,
-    )
+    try:
+        return resume_service.upload_resume(
+            db=db,
+            user=current_user,
+            file=file,
+        )
+    except LLMRateLimitError as e:
+        raise HTTPException(status_code=429, detail=e.message)
 
 
 @router.get(
@@ -37,6 +41,7 @@ def upload_resume(
 )
 def get_resumes(
     db: Session = Depends(get_db),
+    _=Depends(get_current_staff),
 ):
     return resume_service.get_all_resumes(db)
 
@@ -48,6 +53,7 @@ def get_resumes(
 def get_resume(
     resume_id: UUID,
     db: Session = Depends(get_db),
+    _=Depends(get_current_staff),
 ):
     resume = resume_service.get_resume(
         db=db,

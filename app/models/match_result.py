@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Float, ForeignKey, JSON
+from sqlalchemy import DateTime, Float, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Column, Text, JSON
@@ -16,6 +16,13 @@ if TYPE_CHECKING:
 
 class MatchResult(Base):
     __tablename__ = "match_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "resume_id",
+            "job_id",
+            name="uq_match_results_resume_job",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

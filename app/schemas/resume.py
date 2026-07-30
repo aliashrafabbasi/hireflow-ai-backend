@@ -9,6 +9,7 @@ class ResumeResponse(BaseModel):
     user_id: UUID
 
     original_filename: str
+    candidate_name: str | None = None
     stored_filename: str
     file_path: str
     file_type: str

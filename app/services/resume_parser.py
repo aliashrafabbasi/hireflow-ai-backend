@@ -25,6 +25,7 @@ def process_resume(
         analysis = analyze_resume_text(extracted_text)
 
         resume.extracted_text = extracted_text
+        resume.candidate_name = (analysis.candidate_name or "").strip() or None
         resume.processing_status = "completed"
         resume.parsed_at = datetime.utcnow()
 

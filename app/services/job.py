@@ -13,10 +13,15 @@ def create_job(
     db: Session,
     job_data: JobCreate,
 ):
-    return job_repository.create_job(
+    job = job_repository.create_job(
         db,
         job_data,
     )
+
+    # Auto-extract & save skills (same as POST /jobs/{id}/analyze)
+    analyze_job(db, job.id)
+
+    return job_repository.get_job_by_id(db, job.id)
 
 
 def get_jobs(

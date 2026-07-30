@@ -3,15 +3,17 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.dependencies.auth import get_current_admin
+from app.dependencies.auth import get_current_admin, get_current_staff
 from app.dependencies.database import get_db
 from app.models.user import User
+from app.schemas.settings import SettingsResponse, SettingsUpdate
 from app.schemas.user import (
     MessageResponse,
     UserCreate,
     UserResponse,
 )
 from app.services import auth as auth_service
+from app.services import settings as settings_service
 
 router = APIRouter(
     prefix="/admin",
@@ -72,3 +74,32 @@ def delete_hr(
         )
 
     return MessageResponse(message="HR user deactivated successfully")
+
+
+@router.get(
+    "/settings",
+    response_model=SettingsResponse,
+)
+def get_settings(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_staff),
+):
+    return settings_service.get_settings(db)
+
+
+@router.put(
+    "/settings",
+    response_model=SettingsResponse,
+)
+def update_settings(
+    data: SettingsUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    try:
+        return settings_service.update_settings(db, data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
