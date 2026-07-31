@@ -1,49 +1,50 @@
 # HireFlow AI Backend
 
-FastAPI + PostgreSQL + Groq hiring assistant: resume ingest → skill extract → match all jobs → Slack HR alert (via n8n).
+AI hiring pipeline: **Gmail CV → n8n → visible browser RPA → FastAPI + Groq → Slack HR alert**.
 
-**Stack:** FastAPI · PostgreSQL · Alembic · JWT · Groq · n8n · Slack · Gmail
+Staff upload/match via API or UI; inbox automation drives a headed Playwright session on the HireFlow frontend so screening is visible end-to-end.
+
+**Stack:** FastAPI · PostgreSQL · Alembic · JWT · Groq · Playwright · n8n · Gmail · Slack
 
 ---
 
-## Architecture
+## System overview
 
 ```mermaid
 flowchart LR
-  Gmail -->|resume email| n8n
-  n8n -->|login · upload · match| API[HireFlow API]
+  Mail[Gmail inbox] -->|new CV ≤10s poll| n8n
+  n8n -->|POST /rpa/automation/run| API[HireFlow API]
+  API -->|headed Playwright| UI[Frontend :3000]
+  UI -->|upload · Match jobs| API
   API --> DB[(PostgreSQL)]
-  API --> LLM[Groq LLM]
-  n8n -->|best fit alert| Slack
+  API --> LLM[Groq]
+  n8n -->|best fit / error| Slack
+  n8n -->|POST /rpa/show-slack| API
 ```
 
 ```mermaid
 sequenceDiagram
+  participant Gmail
   participant n8n
   participant API
-  participant DB
+  participant UI as HireFlow UI
   participant Groq
+  participant Slack
 
+  Gmail->>n8n: Unread mail + PDF/DOCX
   n8n->>API: POST /auth/login
-  n8n->>API: POST /resumes/upload
-  API->>Groq: extract skills
-  API->>DB: save resume
-  n8n->>API: POST /match/{resume_id}
-  API->>Groq: score vs each job (or use cache)
-  API->>DB: upsert match_results
-  API-->>n8n: best_job + qualified_jobs
-  n8n->>n8n: Slack notify
+  n8n->>API: POST /rpa/automation/run (multipart)
+  API->>UI: Login → upload CV → Match jobs
+  UI->>API: Analyze resume / match
+  API->>Groq: Skills + scores (fallback if 429)
+  API-->>n8n: candidate_name, best_job, score
+  n8n->>Slack: HR success / error message
+  n8n->>API: POST /rpa/show-slack
 ```
 
-```mermaid
-flowchart TD
-  R[Resume skills] --> M[Match engine]
-  J[Job + skills + context] --> M
-  M --> S[Score 0–100]
-  S --> U[Upsert unique resume+job]
-  U --> B[best_job]
-  B --> Q[qualified_jobs ≥ threshold]
-```
+---
+
+## Domain model
 
 ```mermaid
 erDiagram
@@ -52,18 +53,34 @@ erDiagram
   jobs ||--o{ job_skills : has
   resumes ||--o{ match_results : scored
   jobs ||--o{ match_results : scored
+  users ||--o{ match_results : checked_by
+```
+
+```mermaid
+flowchart TD
+  A[Resume text] --> B[LLM / keyword fallback]
+  B --> C[candidate_name + skills]
+  D[Job description] --> E[Job skills]
+  C --> F[Match engine]
+  E --> F
+  F --> G[Score 0–100]
+  G --> H[Upsert match_results]
+  H --> I[best_job + qualified ≥ threshold]
 ```
 
 ---
 
 ## Features
 
-- JWT auth — **admin** (all + settings write) / **hr** (staff APIs)
-- Resume upload (PDF/DOCX) → parse → skills + candidate name
-- Jobs auto-analyze skills on create
-- Domain-aware LLM match across **all** jobs; upsert; cache unless `?force=true`
-- Admin `match_score_threshold`; Groq `429` when rate-limited
-- n8n: Gmail → API → Slack (+ error path)
+| Area | What it does |
+|------|----------------|
+| Auth | JWT — **admin** (users + settings) / **hr** (staff APIs) |
+| Resumes | PDF/DOCX upload → parse → skills + candidate name |
+| Jobs | Create + auto skill analysis |
+| Match | Score vs all jobs; cache; `?force=true`; admin threshold |
+| RPA | Visible browser: login → upload → match; then Slack tab |
+| Resilience | Groq `429` → keyword / skill-overlap fallbacks |
+| n8n | Gmail Trigger (~10s silent poll) → RPA → Slack |
 
 ---
 
@@ -72,52 +89,98 @@ erDiagram
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # set DATABASE_URL, SECRET_KEY, GROQ_API_KEY
+# optional RPA extras:
+pip install -r scripts/requirements-rpa.txt && playwright install chromium
+
+cp .env.example .env   # DATABASE_URL, SECRET_KEY, GROQ_API_KEY, HF_* 
 alembic upgrade head
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Docs: `/docs` · Health: `GET /api/v1/health`  
-First admin: `POST /api/v1/auth/register-admin` (once only)
+| Check | URL |
+|-------|-----|
+| OpenAPI | http://127.0.0.1:8000/docs |
+| Health | `GET /api/v1/health` |
+
+First admin (once): `POST /api/v1/auth/register-admin`
+
+Frontend (separate repo) should be on `HF_BASE_URL` (default `http://localhost:3000`) with the same staff login as `HF_EMAIL` / `HF_PASSWORD`.
 
 ---
 
-## API (`/api/v1`) — Bearer JWT (staff unless noted)
+## Environment
+
+See [`.env.example`](.env.example). Important keys:
+
+| Key | Purpose |
+|-----|---------|
+| `DATABASE_URL` | PostgreSQL |
+| `SECRET_KEY` | JWT signing |
+| `GROQ_API_KEY` | LLM |
+| `RPA_ENABLED` | Enable `/rpa/*` |
+| `HF_EMAIL` / `HF_PASSWORD` | UI login for Playwright |
+| `HF_BASE_URL` | Frontend origin |
+| `SLACK_CHANNEL_URL` | Optional Slack tab after notify |
+| `RPA_SLOW_MO_MS` / `RPA_HEADLESS` | Browser pace / headless |
+
+Never commit `.env`.
+
+---
+
+## API (`/api/v1`) — Bearer JWT unless noted
 
 | Area | Endpoints |
 |------|-----------|
-| Auth | `POST /auth/login` · `POST /auth/register-admin` (public*) |
+| Auth | `POST /auth/login` · `POST /auth/register-admin` (public, once) |
 | Resumes | `POST /resumes/upload` · `GET /resumes` · `GET /resumes/{id}` |
-| Jobs | `POST /jobs` · `GET /jobs` · `GET|DELETE /jobs/{id}` · `POST /jobs/{id}/analyze` |
-| Match | `POST /match/{resume_id}` (all jobs) · `POST /match/{resume_id}/{job_id}` · `GET /match` · `GET /match/by-resume|by-job/{id}` |
-| Admin | `CRUD /admin/users` (admin) · `GET|PUT /admin/settings` |
+| Jobs | `POST /jobs` · `GET /jobs` · `GET\|DELETE /jobs/{id}` · `POST /jobs/{id}/analyze` |
+| Match | `POST /match/{resume_id}` · `POST /match/{resume_id}/{job_id}` · `GET /match` · `GET /match/by-resume\|by-job/{id}` |
+| Admin | `CRUD /admin/users` · `GET\|PUT /admin/settings` |
+| RPA | `POST /rpa/automation/run` · `POST /rpa/show-slack` |
 
-Auto-match returns `candidate_name`, `score_threshold`, `best_job`, `qualified_jobs`.  
-Settings: `PUT /admin/settings` → `{ "match_score_threshold": 70 }`
+Match payload highlights: `candidate_name`, `best_job`, `qualified_jobs`, `score_threshold`.  
+Settings: `PUT /admin/settings` → `{ "match_score_threshold": 70 }`.
 
 ---
 
-## n8n
+## n8n automation
 
-File: [`n8n/hireflow-resume-automation.json`](n8n/hireflow-resume-automation.json)
+**Preferred workflow:** [`n8n/hireflow-mail-visible-rpa.json`](n8n/hireflow-mail-visible-rpa.json)
 
 ```mermaid
 flowchart LR
-  Gmail --> Extract --> Login --> Upload
-  Upload -->|ok| Match --> Slack
-  Upload -->|err| ErrSlack[Slack error]
-  Match -->|err| ErrSlack
+  GT[Gmail Trigger ~10s] -->|new CV only| Ex[Extract attachment]
+  Ex --> Login --> RPA[Open Browser + Run HireFlow]
+  RPA -->|ok| Slack
+  RPA -->|err| ErrSlack[Slack error]
+  Slack --> Show[Show Slack in Browser]
 ```
 
-Import JSON → Gmail + Slack credentials → real login in **Login HireFlow** → publish. Inbox only (not Spam). Calls: login → upload → `POST /match/{resume_id}`.
+| Behavior | Detail |
+|----------|--------|
+| Trigger | Gmail Trigger — silent poll; **execution only when mail matches** |
+| Latency | Poll ticks `:00,:10,:20,:30,:40,:50` → start within ~10s |
+| Filter | Unread + attachment (`pdf` / `docx` / `doc`) |
+| Name on Slack | Scraped HireFlow name; UUID filenames rejected |
+| Legacy | [`n8n/hireflow-resume-automation.json`](n8n/hireflow-resume-automation.json) = API-only (no browser) |
+
+Import → attach Gmail OAuth + Slack → set Login body to a real staff user → **Publish** + activate. Inbox only (not Spam).
+
+Local n8n: `npx n8n` → http://localhost:5678
 
 ---
 
 ## Layout
 
 ```text
-app/api · core · models · prompts · repositories · schemas · services
-alembic/ · n8n/ · uploads/resumes/
+app/
+  api/v1/endpoints/   # auth, resumes, jobs, match, admin, rpa
+  services/           # llm, matching, rpa_browser, analyzers
+  models/ repositories/ schemas/ prompts/
+alembic/              # migrations
+n8n/                  # workflow JSON exports
+scripts/              # optional RPA helpers / demos
+uploads/              # runtime files (gitignored)
 ```
 
 ---
@@ -126,10 +189,14 @@ alembic/ · n8n/ · uploads/resumes/
 
 | Issue | Fix |
 |-------|-----|
-| `401` | Re-login; send `Authorization: Bearer …` |
-| `429` Groq | Wait / upgrade; avoid `force=true` spam |
-| n8n error Slack | Check Executions + API logs |
+| `401` | Re-login; `Authorization: Bearer …` |
+| Groq `429` | Pipeline keeps going via fallbacks; wait or upgrade quota |
+| RPA disabled | `RPA_ENABLED=true` + valid `HF_*` |
+| Browser blank / wrong host | Frontend up; `HF_BASE_URL` matches |
+| Slack shows UUID name | Re-run with published RPA workflow; name comes from UI extract |
+| n8n “poll too short” | Don’t use `*/10 * * * * *`; use `0,10,20,30,40,50 * * * * *` |
+| Workflow runs every 10s empty | Use **Gmail Trigger**, not Schedule Trigger |
 | Spam ignored | Move mail to Inbox |
 | Score ~0 | `POST /jobs/{id}/analyze` |
 
-Keep `.env` private. Prefer HTTPS in production.
+Prefer HTTPS + strong secrets in production.

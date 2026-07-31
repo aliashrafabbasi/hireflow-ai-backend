@@ -1,4 +1,3 @@
-```gitignore
 # ==========================================
 # Python
 # ==========================================
@@ -17,11 +16,14 @@ env/
 ENV/
 
 # ==========================================
-# Environment Variables
+# Environment / Secrets
 # ==========================================
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.crt
 
 # ==========================================
 # IDE / Editors
@@ -31,9 +33,10 @@ ENV/
 *.swp
 *.swo
 *~
+.cursor/
 
 # ==========================================
-# Testing
+# Testing / Coverage
 # ==========================================
 .pytest_cache/
 .coverage
@@ -43,15 +46,11 @@ htmlcov/
 .nox/
 
 # ==========================================
-# Type Checkers
+# Type Checkers / Linters
 # ==========================================
 .mypy_cache/
 .pyre/
 .pytype/
-
-# ==========================================
-# Ruff
-# ==========================================
 .ruff_cache/
 
 # ==========================================
@@ -75,10 +74,11 @@ pip-wheel-metadata/
 .ipynb_checkpoints/
 
 # ==========================================
-# OS Files
+# OS
 # ==========================================
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # ==========================================
 # Docker
@@ -86,41 +86,47 @@ Thumbs.db
 docker-compose.override.yml
 
 # ==========================================
-# Database
+# Local databases / n8n dumps
 # ==========================================
 *.db
 *.sqlite
 *.sqlite3
 
 # ==========================================
-# Alembic
+# Runtime uploads & RPA temps
 # ==========================================
-alembic/versions/*.pyc
-
-# ==========================================
-# Temporary Files
-# ==========================================
+uploads/
 tmp/
 temp/
 .cache/
+hireflow-rpa-*/
+/tmp/hireflow-*
 
 # ==========================================
-# Secrets
+# Playwright
 # ==========================================
-*.pem
-*.key
-*.crt
-```
+.playwright/
+playwright-report/
+test-results/
+blob-report/
 
-# Uploaded files
-uploads/
+# ==========================================
+# One-off / scratch / local junk
+# ==========================================
+fix_resume_skills.py
+/d
+/dt
+*.bak
+*.tmp
+*.orig
 
-# Environment
-.venv/
-
-# Python cache
-__pycache__/
-*.pyc
-
-# Environment variables
-.env
+# ==========================================
+# Media accidentally dropped in repo root
+# ==========================================
+/*.pdf
+/*.docx
+/*.doc
+/*.png
+/*.jpg
+/*.jpeg
+!docs/**

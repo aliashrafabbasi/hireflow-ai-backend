@@ -67,3 +67,21 @@ def get_resume(
         )
 
     return resume
+
+
+@router.delete(
+    "/{resume_id}",
+)
+def delete_resume(
+    resume_id: UUID,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_staff),
+):
+    resume = resume_service.delete_resume(db, resume_id)
+    if not resume:
+        raise HTTPException(
+            status_code=404,
+            detail="Resume not found",
+        )
+
+    return {"message": "CV deleted successfully"}

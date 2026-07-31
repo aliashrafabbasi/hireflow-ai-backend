@@ -50,8 +50,11 @@ def update_resume_parsing(
 def get_resumes(
     db: Session,
 ):
-    return db.query(Resume).all()
-
+    return (
+        db.query(Resume)
+        .order_by(Resume.uploaded_at.desc())
+        .all()
+    )
 
 def get_resume_by_id(
     db: Session,
@@ -62,3 +65,16 @@ def get_resume_by_id(
         .filter(Resume.id == resume_id)
         .first()
     )
+
+
+def delete_resume(
+    db: Session,
+    resume_id: UUID,
+):
+    resume = get_resume_by_id(db, resume_id)
+    if not resume:
+        return None
+
+    db.delete(resume)
+    db.commit()
+    return resume

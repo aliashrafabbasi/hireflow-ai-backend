@@ -61,3 +61,4 @@ uvloop==0.22.1
 virtualenv==21.7.0
 watchfiles==1.2.0
 websockets==16.1.1
+playwright>=1.49.0

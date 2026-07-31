@@ -1,0 +1,5 @@
+# Optional deps for visible browser RPA (mail → Playwright → Slack via n8n)
+playwright>=1.49.0
+fastapi>=0.115.0
+uvicorn>=0.32.0
+python-multipart>=0.0.12

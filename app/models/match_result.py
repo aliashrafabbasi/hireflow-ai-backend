@@ -1,17 +1,18 @@
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import Column, DateTime, Float, ForeignKey, JSON, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Column, Text, JSON
+
 from app.db.base import Base
 
 
 if TYPE_CHECKING:
     from app.models.resume import Resume
     from app.models.job import Job
+    from app.models.user import User
 
 
 class MatchResult(Base):
@@ -42,6 +43,13 @@ class MatchResult(Base):
         nullable=False,
     )
 
+    checked_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     match_score: Mapped[float] = mapped_column(
         Float,
         nullable=False,
@@ -62,16 +70,27 @@ class MatchResult(Base):
         default=datetime.utcnow,
     )
 
+    checked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        nullable=True,
+        default=datetime.utcnow,
+    )
+
     resume: Mapped["Resume"] = relationship()
 
     job: Mapped["Job"] = relationship()
 
+    checked_by: Mapped[Optional["User"]] = relationship(
+        "User",
+        foreign_keys=[checked_by_id],
+    )
+
     explanation = Column(
         Text,
-        nullable=True
+        nullable=True,
     )
 
     recommendations = Column(
         JSON,
-        nullable=True
+        nullable=True,
     )

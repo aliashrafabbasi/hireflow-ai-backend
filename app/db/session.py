@@ -6,7 +6,8 @@ from app.core.config import settings
 
 engine = create_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
+    # DEBUG dumps every SQL statement and hides real app errors — keep off by default.
+    echo=False,
 )
 
 

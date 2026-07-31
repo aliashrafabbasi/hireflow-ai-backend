@@ -24,6 +24,11 @@ class MatchResponse(BaseModel):
     recommendations: list[Recommendation] | None = None
 
     created_at: datetime
+    checked_at: datetime | None = None
+
+    checked_by_id: UUID | None = None
+    checked_by: str | None = None
+    checked_by_email: str | None = None
 
     class Config:
         from_attributes = True

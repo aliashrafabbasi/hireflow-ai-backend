@@ -1,10 +1,63 @@
 import json
+import re
 
 from groq import RateLimitError
 
-from app.core.exceptions import LLMRateLimitError
 from app.prompts.match_prompt import MATCH_ANALYSIS_PROMPT
 from app.services.llm import client
+
+
+def _norm(skill: str) -> str:
+    return re.sub(r"\s+", " ", (skill or "").strip().lower())
+
+
+def skill_overlap_match(
+    resume_skills: list[str],
+    job_skills: list[str],
+    *,
+    job_title: str | None = None,
+) -> dict:
+    """Deterministic fallback when Groq is rate-limited."""
+    resume_norms = [_norm(s) for s in resume_skills if _norm(s)]
+    matched: list[str] = []
+    missing: list[str] = []
+
+    for job_skill in job_skills:
+        jn = _norm(job_skill)
+        if not jn:
+            continue
+        hit = False
+        for rn in resume_norms:
+            if rn == jn or rn in jn or jn in rn:
+                hit = True
+                break
+        if hit:
+            matched.append(job_skill)
+        else:
+            missing.append(job_skill)
+
+    score = (
+        round((len(matched) / len(job_skills)) * 100, 2) if job_skills else 0.0
+    )
+    title = f" for {job_title}" if job_title else ""
+    return {
+        "match_score": score,
+        "matched_skills": matched,
+        "missing_skills": missing,
+        "explanation": (
+            f"Skill-overlap score{title} "
+            f"({len(matched)}/{len(job_skills)} required skills). "
+            "LLM was rate-limited, so heuristic scoring was used."
+        ),
+        "recommendations": [
+            {
+                "skill": s,
+                "resource": "Highlight this skill on the resume or gain related experience.",
+            }
+            for s in missing[:5]
+        ],
+        "scoring_mode": "skill_overlap_fallback",
+    }
 
 
 def analyze_match(
@@ -54,10 +107,12 @@ def analyze_match(
                 "type": "json_object",
             },
         )
-    except RateLimitError as e:
-        raise LLMRateLimitError(
-            "Groq daily token limit reached. Wait and retry, or upgrade Groq tier."
-        ) from e
+    except RateLimitError:
+        return skill_overlap_match(
+            resume_skills,
+            job_skills,
+            job_title=job_title,
+        )
 
     return json.loads(
         response.choices[0].message.content

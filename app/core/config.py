@@ -19,6 +19,17 @@ class Settings(BaseSettings):
 
     GROQ_API_KEY: str
 
+    # Visible browser RPA (n8n email → Playwright on this machine)
+    RPA_ENABLED: bool = True
+    HF_EMAIL: str | None = None
+    HF_PASSWORD: str | None = None
+    RPA_UI_EMAIL: str | None = None
+    RPA_UI_PASSWORD: str | None = None
+    HF_BASE_URL: str = "http://localhost:3000"
+    SLACK_CHANNEL_URL: str | None = None
+    RPA_SLOW_MO_MS: int = 120
+    RPA_HEADLESS: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

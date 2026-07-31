@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class JobCreate(BaseModel):
@@ -17,6 +17,7 @@ class JobResponse(BaseModel):
     description: str
     created_at: datetime
     updated_at: datetime
+    skills: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(
         from_attributes=True

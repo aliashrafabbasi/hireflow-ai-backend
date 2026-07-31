@@ -29,7 +29,19 @@
       "name": "Extract Resume Attachments",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [260, 300]
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Slow down so you can watch steps in Executions / Editor\nawait new Promise((r) => setTimeout(r, 3500));\nreturn $input.all();"
+      },
+      "id": "pause-1",
+      "name": "⏳ Watch: CV extracted",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "notesInFlow": true,
+      "notes": "Demo pause (~3.5s) so you can see this step live"
     },
     {
       "parameters": {
@@ -44,12 +56,22 @@
       "name": "Login HireFlow",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [520, 300],
+      "position": [720, 300],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
       "notesInFlow": true,
       "notes": "IMPORTANT: Replace YOUR_ADMIN_EMAIL and YOUR_PASSWORD"
+    },
+    {
+      "parameters": {
+        "jsCode": "await new Promise((r) => setTimeout(r, 3500));\nreturn $input.all();"
+      },
+      "id": "pause-2",
+      "name": "⏳ Watch: logged in",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 300]
     },
     {
       "parameters": {
@@ -59,7 +81,7 @@
       "name": "Attach Token + Resume",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [780, 300]
+      "position": [1200, 300]
     },
     {
       "parameters": {
@@ -91,11 +113,21 @@
       "name": "Upload Resume",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1040, 300],
+      "position": [1440, 300],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 3000,
       "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "await new Promise((r) => setTimeout(r, 3500));\nreturn $input.all();"
+      },
+      "id": "pause-3",
+      "name": "⏳ Watch: CV uploaded",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1680, 220]
     },
     {
       "parameters": {
@@ -105,7 +137,7 @@
       "name": "Prepare Auto Match",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1300, 240]
+      "position": [1920, 220]
     },
     {
       "parameters": {
@@ -126,7 +158,7 @@
       "name": "Auto Match Best Job",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1560, 240],
+      "position": [2160, 220],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -136,13 +168,23 @@
     },
     {
       "parameters": {
+        "jsCode": "await new Promise((r) => setTimeout(r, 3500));\nreturn $input.all();"
+      },
+      "id": "pause-4",
+      "name": "⏳ Watch: match done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2400, 220]
+    },
+    {
+      "parameters": {
         "jsCode": "const data = $input.first().json;\nconst emailMeta = $('Prepare Auto Match').first().json;\n\nconst candidateName =\n  data.candidate_name ||\n  emailMeta.candidateName ||\n  'Unknown Candidate';\n\nconst best = data.best_job || {};\nconst qualified = Array.isArray(data.qualified_jobs) ? data.qualified_jobs : [];\nconst threshold = data.score_threshold ?? 50;\n\nconst bestMatched = (best.matched_skills || []).slice(0, 10).join(', ') || 'N/A';\nconst bestMissing = (best.missing_skills || []).slice(0, 8).join(', ') || 'None';\n\nconst jobLines = qualified.map((j, idx) => {\n  return `${idx + 1}. *${j.job_title}* @ ${j.company} — *${j.match_score}%*`;\n});\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `👋 *Dear HR Team,*`,\n  ``,\n  `A new candidate resume just landed in HireFlow and has been screened against our open roles.`,\n  ``,\n  `*Candidate:* ${candidateName}`,\n  `*Resume file:* ${data.resume_filename || emailMeta.fileName || 'N/A'}`,\n  `*Received from:* ${emailMeta.emailFrom || 'N/A'}`,\n  `*Email subject:* ${emailMeta.emailSubject || '(no subject)'}`,\n  `*Resume ID:* \\`${data.resume_id || ''}\\``,\n  ``,\n  `*Best matched job*`,\n  `• *${best.job_title || 'N/A'}* @ ${best.company || 'N/A'}`,\n  `  Match score: *${best.match_score ?? 'N/A'}%*`,\n  `  Matched skills: ${bestMatched}`,\n  `  Missing skills: ${bestMissing}`,\n  best.summary ? `  Summary: ${best.summary}` : null,\n  ``,\n  `*Jobs this candidate qualifies for (score ≥ ${threshold}):*`,\n  ...(jobLines.length ? jobLines : ['None']),\n  ``,\n  `_Please review this candidate and proceed with shortlisting if it looks like a fit._`,\n].filter((line) => line !== null).join('\\n');\n\nreturn [{\n  json: {\n    text,\n    candidateName,\n    best_score: best.match_score,\n    qualified_count: qualified.length,\n  },\n}];"
       },
       "id": "format-slack",
       "name": "Format Slack Message",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1820, 240]
+      "position": [2640, 220]
     },
     {
       "parameters": {
@@ -159,19 +201,19 @@
       "name": "Notify HR on Slack",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.3,
-      "position": [2080, 240],
+      "position": [2880, 220],
       "notesInFlow": true,
       "notes": "Slack credential + channel: new-channel"
     },
     {
       "parameters": {
-        "jsCode": "const err = $input.first().json;\nconst msg = err.message || err.error || JSON.stringify(err);\nconst node = err.node?.name || err.node || 'Unknown node';\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `🚨 *HireFlow Automation Failed*`,\n  ``,\n  `*Node:* ${node}`,\n  `*Error:* ${msg}`,\n  `*Time:* ${new Date().toISOString()}`,\n  ``,\n  `_Please check n8n Executions and backend logs._`,\n].join('\\n');\n\nreturn [{ json: { text } }];"
+        "jsCode": "function pickError(raw) {\n  if (raw == null) return 'Unknown error';\n  if (typeof raw === 'string') return raw;\n  if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);\n\n  const detail =\n    raw.detail ||\n    raw.message ||\n    raw.error?.message ||\n    raw.error ||\n    raw.description ||\n    raw.statusMessage ||\n    null;\n\n  if (typeof detail === 'string') return detail;\n  if (detail && typeof detail === 'object') {\n    try { return JSON.stringify(detail); } catch { /* ignore */ }\n  }\n\n  try {\n    return JSON.stringify(raw);\n  } catch {\n    return String(raw);\n  }\n}\n\nconst err = $input.first().json || {};\nconst node =\n  err.node?.name ||\n  err.node ||\n  err.name ||\n  'Upload / Match';\n\nconst msg = pickError(err);\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `🚨 *HireFlow Automation Failed*`,\n  ``,\n  `*Node:* ${node}`,\n  `*Error:* ${msg}`,\n  `*Time:* ${new Date().toISOString()}`,\n  ``,\n  `_Open n8n → Executions → open this run → click failed node._`,\n].join('\\n');\n\nreturn [{ json: { text, node, error: msg } }];"
       },
       "id": "format-error",
       "name": "Format Error Slack",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1560, 480]
+      "position": [1920, 480]
     },
     {
       "parameters": {
@@ -188,7 +230,7 @@
       "name": "Notify Error on Slack",
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.3,
-      "position": [1820, 480]
+      "position": [2160, 480]
     }
   ],
   "connections": {
@@ -196,9 +238,15 @@
       "main": [[{ "node": "Extract Resume Attachments", "type": "main", "index": 0 }]]
     },
     "Extract Resume Attachments": {
+      "main": [[{ "node": "⏳ Watch: CV extracted", "type": "main", "index": 0 }]]
+    },
+    "⏳ Watch: CV extracted": {
       "main": [[{ "node": "Login HireFlow", "type": "main", "index": 0 }]]
     },
     "Login HireFlow": {
+      "main": [[{ "node": "⏳ Watch: logged in", "type": "main", "index": 0 }]]
+    },
+    "⏳ Watch: logged in": {
       "main": [[{ "node": "Attach Token + Resume", "type": "main", "index": 0 }]]
     },
     "Attach Token + Resume": {
@@ -206,18 +254,24 @@
     },
     "Upload Resume": {
       "main": [
-        [{ "node": "Prepare Auto Match", "type": "main", "index": 0 }],
+        [{ "node": "⏳ Watch: CV uploaded", "type": "main", "index": 0 }],
         [{ "node": "Format Error Slack", "type": "main", "index": 0 }]
       ]
+    },
+    "⏳ Watch: CV uploaded": {
+      "main": [[{ "node": "Prepare Auto Match", "type": "main", "index": 0 }]]
     },
     "Prepare Auto Match": {
       "main": [[{ "node": "Auto Match Best Job", "type": "main", "index": 0 }]]
     },
     "Auto Match Best Job": {
       "main": [
-        [{ "node": "Format Slack Message", "type": "main", "index": 0 }],
+        [{ "node": "⏳ Watch: match done", "type": "main", "index": 0 }],
         [{ "node": "Format Error Slack", "type": "main", "index": 0 }]
       ]
+    },
+    "⏳ Watch: match done": {
+      "main": [[{ "node": "Format Slack Message", "type": "main", "index": 0 }]]
     },
     "Format Slack Message": {
       "main": [[{ "node": "Notify HR on Slack", "type": "main", "index": 0 }]]

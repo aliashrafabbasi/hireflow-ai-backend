@@ -1,0 +1,265 @@
+{
+  "name": "HireFlow - Mail to Visible Browser + Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "custom",
+              "cronExpression": "0,10,20,30,40,50 * * * * *"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "has:attachment (filename:pdf OR filename:docx OR filename:doc)",
+          "readStatus": "unread"
+        },
+        "options": {
+          "downloadAttachments": true,
+          "dataPropertyAttachmentsPrefixName": "attachment_"
+        }
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 300],
+      "notesInFlow": true,
+      "notes": "Silent poll every 10s. Workflow runs ONLY when a new matching email arrives — not on empty polls."
+    },
+    {
+      "parameters": {
+        "jsCode": "function formatEmailFrom(from) {\n  if (!from) return 'Unknown sender';\n  if (typeof from === 'string') return from;\n  if (from.text) return from.text;\n  if (Array.isArray(from.value) && from.value[0]) {\n    const v = from.value[0];\n    if (v.name && v.address) return `${v.name} <${v.address}>`;\n    return v.address || v.name || 'Unknown sender';\n  }\n  return 'Unknown sender';\n}\n\nfunction looksLikeUuidName(name) {\n  if (!name) return true;\n  const compact = String(name).replace(/[\\s-]/g, '');\n  return /^[0-9a-f]{32}$/i.test(compact);\n}\n\nfunction candidateFromFileName(fileName) {\n  if (!fileName) return null;\n  const cleaned = fileName\n    .replace(/\\.(pdf|docx?|PDF|DOCX?)$/,'')\n    .replace(/[-_]+/g, ' ')\n    .replace(/\\bresume\\b/gi, '')\n    .replace(/\\bcv\\b/gi, '')\n    .replace(/\\s+/g, ' ')\n    .trim();\n  if (!cleaned || looksLikeUuidName(cleaned)) return null;\n  return cleaned;\n}\n\nconst items = [];\nfor (const item of $input.all()) {\n  const binary = item.binary || {};\n  for (const key of Object.keys(binary)) {\n    if (!key.startsWith('attachment_')) continue;\n    const file = binary[key];\n    const lowerName = (file.fileName || key).toLowerCase();\n    const mime = (file.mimeType || '').toLowerCase();\n    const isResume =\n      lowerName.endsWith('.pdf') ||\n      lowerName.endsWith('.docx') ||\n      lowerName.endsWith('.doc') ||\n      mime.includes('pdf') ||\n      mime.includes('word') ||\n      mime.includes('document');\n    if (!isResume) continue;\n    const fileName = file.fileName || key;\n    items.push({\n      json: {\n        emailSubject: item.json.subject || '(no subject)',\n        emailFrom: formatEmailFrom(item.json.from || item.json.From),\n        fileName,\n        candidateName: candidateFromFileName(fileName),\n      },\n      binary: { data: file },\n    });\n  }\n}\nreturn items;"
+      },
+      "id": "extract-resume",
+      "name": "Extract Resume Attachments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/v1/auth/login",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"email\": \"aiautomation@gmail.com\",\n  \"password\": \"abc123\"\n}",
+        "options": {}
+      },
+      "id": "login",
+      "name": "Login HireFlow API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300],
+      "notesInFlow": true,
+      "notes": "Same account as backend .env HF_EMAIL / HF_PASSWORD"
+    },
+    {
+      "parameters": {
+        "jsCode": "const token = $('Login HireFlow API').first().json.access_token;\nif (!token) throw new Error('Login failed — no access_token');\nreturn $('Extract Resume Attachments').all().map((item) => ({\n  json: { ...item.json, access_token: token },\n  binary: item.binary,\n}));"
+      },
+      "id": "attach-token",
+      "name": "Attach Token + Resume",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/v1/rpa/automation/run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "email_from",
+              "value": "={{ $json.emailFrom }}"
+            },
+            {
+              "name": "email_subject",
+              "value": "={{ $json.emailSubject }}"
+            },
+            {
+              "name": "candidate_name",
+              "value": "={{ $json.candidateName }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "run-rpa",
+      "name": "Open Browser + Run HireFlow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1040, 300],
+      "onError": "continueErrorOutput",
+      "notesInFlow": true,
+      "notes": "HireFlow UI only. Slack opens after Notify so the posted message is visible."
+    },
+    {
+      "parameters": {
+        "jsCode": "function looksLikeUuidName(name) {\n  if (!name) return true;\n  const compact = String(name).replace(/[\\s-]/g, '');\n  return /^[0-9a-f]{32}$/i.test(compact);\n}\n\nconst data = $input.first().json || {};\nif (!data.ok) {\n  throw new Error(data.error || data.detail?.error || 'Visible RPA failed');\n}\nif (!data.best_job_title || !data.best_score) {\n  throw new Error(data.message || 'Match score missing — not sending success Slack');\n}\n\nconst meta = $('Extract Resume Attachments').first().json;\nconst token = $('Attach Token + Resume').first().json.access_token;\n\nconst rawName = data.candidate_name || meta.candidateName || '';\nconst candidate = looksLikeUuidName(rawName) ? 'Unknown Candidate' : String(rawName).trim();\nconst best = data.best_job_title;\nconst company = data.company || 'N/A';\nconst score = data.best_score;\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `👋 *Dear HR Team,*`,\n  ``,\n  `A new candidate resume just landed in HireFlow and has been screened against our open roles.`,\n  ``,\n  `*Candidate:* ${candidate}`,\n  `*Resume file:* ${data.resume_filename || meta.fileName || 'N/A'}`,\n  `*Received from:* ${meta.emailFrom || data.email_from || 'N/A'}`,\n  `*Email subject:* ${meta.emailSubject || data.email_subject || '(no subject)'}`,\n  ``,\n  `*Best matched job*`,\n  `• *${best}* @ ${company}`,\n  `  Match score: *${score}*`,\n  ``,\n  `_Please review this candidate and proceed with shortlisting if it looks like a fit._`,\n].join('\\n');\n\nreturn [{ json: { text, access_token: token, ...data, candidate_name: candidate } }];"
+      },
+      "id": "format-slack",
+      "name": "Format Slack Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 200]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "new-channel"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "id": "slack-notify",
+      "name": "Notify HR on Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/v1/rpa/show-slack",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token || $('Attach Token + Resume').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"hold_ms\": 12000\n}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "show-slack",
+      "name": "Show Slack in Browser",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 200],
+      "notesInFlow": true,
+      "notes": "Opens Slack after the message is posted so you can see it live."
+    },
+    {
+      "parameters": {
+        "jsCode": "function pickError(raw) {\n  if (raw == null) return 'Unknown error';\n  if (typeof raw === 'string') return raw;\n  if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);\n\n  const detail =\n    raw.detail?.error ||\n    raw.detail ||\n    raw.message ||\n    raw.error?.message ||\n    raw.error ||\n    raw.description ||\n    raw.statusMessage ||\n    null;\n\n  if (typeof detail === 'string') return detail;\n  if (detail && typeof detail === 'object') {\n    try { return JSON.stringify(detail); } catch { /* ignore */ }\n  }\n\n  try {\n    return JSON.stringify(raw);\n  } catch {\n    return String(raw);\n  }\n}\n\nconst err = $input.first().json || {};\nconst node =\n  err.node?.name ||\n  err.node ||\n  err.name ||\n  'Open Browser + Run HireFlow';\n\nconst msg = pickError(err);\nconst token = (() => {\n  try { return $('Attach Token + Resume').first().json.access_token; } catch { return null; }\n})();\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `🚨 *HireFlow Automation Failed*`,\n  ``,\n  `*Node:* ${node}`,\n  `*Error:* ${msg}`,\n  `*Time:* ${new Date().toISOString()}`,\n  ``,\n  `_Open n8n → Executions → open this run → click failed node._`,\n].join('\\n');\n\nreturn [{ json: { text, node, error: msg, access_token: token } }];"
+      },
+      "id": "format-error",
+      "name": "Format Error Slack",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1300, 420]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "new-channel"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "id": "slack-error",
+      "name": "Notify Error on Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [1560, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/v1/rpa/show-slack",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.access_token || $('Attach Token + Resume').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"hold_ms\": 10000\n}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "show-error-slack",
+      "name": "Show Error Slack in Browser",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1820, 420]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [[{ "node": "Extract Resume Attachments", "type": "main", "index": 0 }]]
+    },
+    "Extract Resume Attachments": {
+      "main": [[{ "node": "Login HireFlow API", "type": "main", "index": 0 }]]
+    },
+    "Login HireFlow API": {
+      "main": [[{ "node": "Attach Token + Resume", "type": "main", "index": 0 }]]
+    },
+    "Attach Token + Resume": {
+      "main": [[{ "node": "Open Browser + Run HireFlow", "type": "main", "index": 0 }]]
+    },
+    "Open Browser + Run HireFlow": {
+      "main": [
+        [{ "node": "Format Slack Message", "type": "main", "index": 0 }],
+        [{ "node": "Format Error Slack", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Slack Message": {
+      "main": [[{ "node": "Notify HR on Slack", "type": "main", "index": 0 }]]
+    },
+    "Notify HR on Slack": {
+      "main": [[{ "node": "Show Slack in Browser", "type": "main", "index": 0 }]]
+    },
+    "Format Error Slack": {
+      "main": [[{ "node": "Notify Error on Slack", "type": "main", "index": 0 }]]
+    },
+    "Notify Error on Slack": {
+      "main": [[{ "node": "Show Error Slack in Browser", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
