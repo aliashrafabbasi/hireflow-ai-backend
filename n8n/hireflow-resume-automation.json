@@ -46,7 +46,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8000/api/v1/auth/login",
+        "url": "http://api:8000/api/v1/auth/login",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "{\n  \"email\": \"YOUR_ADMIN_EMAIL\",\n  \"password\": \"YOUR_PASSWORD\"\n}",
@@ -86,7 +86,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8000/api/v1/resumes/upload",
+        "url": "http://api:8000/api/v1/resumes/upload",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -142,7 +142,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=http://127.0.0.1:8000/api/v1/match/{{ $json.id }}",
+        "url": "=http://api:8000/api/v1/match/{{ $json.id }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

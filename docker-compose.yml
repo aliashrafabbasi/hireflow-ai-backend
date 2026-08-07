@@ -1,0 +1,76 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hireflow_db}
+      POSTGRES_USER: ${POSTGRES_USER:-hireflow_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hireflow_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    environment:
+      # One database URL for every environment. Set it to the local PostgreSQL
+      # URL during development or to the Neon URL when deploying.
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env before starting Docker Compose}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env before starting Docker Compose}
+      GROQ_API_KEY: ${GROQ_API_KEY:?Set GROQ_API_KEY in .env before starting Docker Compose}
+      DEBUG: ${DEBUG:-false}
+      RPA_ENABLED: ${RPA_ENABLED:-false}
+      RPA_HEADLESS: ${RPA_HEADLESS:-true}
+      HF_EMAIL: ${HF_EMAIL:-}
+      HF_PASSWORD: ${HF_PASSWORD:-}
+      HF_BASE_URL: ${HF_BASE_URL:-http://host.docker.internal:3000}
+      SLACK_CHANNEL_URL: ${SLACK_CHANNEL_URL:-}
+      RPA_SLOW_MO_MS: ${RPA_SLOW_MO_MS:-120}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - uploads_data:/app/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c 'alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000'
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n:latest
+    profiles: ["automation"]
+    environment:
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      # Set a unique value in .env before using n8n outside local development.
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-local-development-only-change-me}
+      GENERIC_TIMEZONE: ${TZ:-UTC}
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  uploads_data:
+  n8n_data:

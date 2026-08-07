@@ -7,7 +7,7 @@
           "item": [
             {
               "mode": "custom",
-              "cronExpression": "0,10,20,30,40,50 * * * * *"
+              "cronExpression": "0 * * * * *"
             }
           ]
         },
@@ -42,7 +42,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8000/api/v1/auth/login",
+        "url": "http://api:8000/api/v1/auth/login",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "{\n  \"email\": \"aiautomation@gmail.com\",\n  \"password\": \"abc123\"\n}",
@@ -69,7 +69,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8000/api/v1/rpa/automation/run",
+        "url": "http://api:8000/api/v1/rpa/automation/run",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -145,7 +145,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8000/api/v1/rpa/show-slack",
+        "url": "http://api:8000/api/v1/rpa/show-slack",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -200,7 +200,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8000/api/v1/rpa/show-slack",
+        "url": "http://api:8000/api/v1/rpa/show-slack",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

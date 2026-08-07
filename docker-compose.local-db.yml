@@ -1,0 +1,7 @@
+# Development override: make the API use PostgreSQL already running on the host.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local-db.yml up -d --build
+services:
+  api:
+    network_mode: host
+    ports: !reset []
+    extra_hosts: !reset []

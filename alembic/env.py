@@ -3,10 +3,15 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app.core.config import settings
 from app.db.base import Base
 import app.db.models
 
 config = context.config
+
+# Keep migrations and the API pointed at the same database.  In particular,
+# this overrides the placeholder/default URL in alembic.ini with DATABASE_URL.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

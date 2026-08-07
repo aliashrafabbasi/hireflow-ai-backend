@@ -106,6 +106,28 @@ First admin (once): `POST /api/v1/auth/register-admin`
 
 Frontend (separate repo) should be on `HF_BASE_URL` (default `http://localhost:3000`) with the same staff login as `HF_EMAIL` / `HF_PASSWORD`.
 
+## Docker
+
+Copy the example configuration and set real secret values before starting:
+
+```bash
+cp .env.example .env
+# Set SECRET_KEY and GROQ_API_KEY in .env
+docker compose up --build
+```
+
+This starts PostgreSQL and the API at `http://localhost:8000`; migrations run automatically before the API starts. Database data and uploaded resumes use named Docker volumes.
+
+To also start n8n, add a long random `N8N_ENCRYPTION_KEY` to `.env`, then run:
+
+```bash
+docker compose --profile automation up --build
+```
+
+Import either workflow from `n8n/` after n8n is available at `http://localhost:5678`. The Docker versions use `http://api:8000`, the internal Compose hostname, instead of `127.0.0.1`.
+
+RPA is disabled by default. To enable it in Docker, set `RPA_ENABLED=true`, `RPA_HEADLESS=true`, valid staff credentials, and `HF_BASE_URL`. On Linux/macOS the default `HF_BASE_URL` reaches a frontend running on the host through `host.docker.internal`. A headed/visible browser cannot be displayed on the host desktop from this container setup.
+
 ---
 
 ## Environment
