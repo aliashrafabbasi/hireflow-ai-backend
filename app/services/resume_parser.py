@@ -13,7 +13,7 @@ def process_resume(
     resume: Resume,
 ):
     try:
-        doc = fitz.open(resume.file_path)
+        doc = fitz.open(stream=resume.file_content)
 
         extracted_text = ""
 

@@ -66,6 +66,18 @@ def get_current_staff(
     return current_user
 
 
+def get_current_career_user(
+    current_user=Depends(get_current_user),
+):
+    """Allow only accounts registered through the career portal."""
+    if current_user.role != "user":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Career portal user access required",
+        )
+    return current_user
+
+
 def get_current_admin(
     current_user=Depends(get_current_user),
 ):

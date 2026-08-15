@@ -5,6 +5,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
 )
@@ -49,14 +50,8 @@ class Resume(Base):
         nullable=True,
     )
 
-    stored_filename: Mapped[str] = mapped_column(
-        String(255),
-        unique=True,
-        nullable=False,
-    )
-
-    file_path: Mapped[str] = mapped_column(
-        String(500),
+    file_content: Mapped[bytes] = mapped_column(
+        LargeBinary,
         nullable=False,
     )
 

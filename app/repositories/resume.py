@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models.resume import Resume
+from app.models.user import User
 from uuid import UUID
 
 
@@ -14,8 +15,7 @@ def create_resume(
     resume = Resume(
         user_id=user_id,
         original_filename=file_data["original_filename"],
-        stored_filename=file_data["stored_filename"],
-        file_path=file_data["file_path"],
+        file_content=file_data["file_content"],
         file_type=file_data["file_type"],
         file_size=file_data["file_size"],
         status="uploaded",
@@ -52,9 +52,24 @@ def get_resumes(
 ):
     return (
         db.query(Resume)
+        .join(User, Resume.user_id == User.id)
+        .filter(User.role != "user")
         .order_by(Resume.uploaded_at.desc())
         .all()
     )
+
+
+def get_resumes_by_user(
+    db: Session,
+    user_id: UUID,
+):
+    return (
+        db.query(Resume)
+        .filter(Resume.user_id == user_id)
+        .order_by(Resume.uploaded_at.desc())
+        .all()
+    )
+
 
 def get_resume_by_id(
     db: Session,
@@ -63,6 +78,19 @@ def get_resume_by_id(
     return (
         db.query(Resume)
         .filter(Resume.id == resume_id)
+        .first()
+    )
+
+
+def get_staff_resume_by_id(
+    db: Session,
+    resume_id: UUID,
+):
+    """Return a resume only when it belongs to a staff/admin account."""
+    return (
+        db.query(Resume)
+        .join(User, Resume.user_id == User.id)
+        .filter(Resume.id == resume_id, User.role != "user")
         .first()
     )
 

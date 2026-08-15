@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     auth,
     health,
     users,
+    user_career,
     resume,
     jobs,
     match,
@@ -17,6 +18,7 @@ api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(admin.router)
 api_router.include_router(users.router)
+api_router.include_router(user_career.router)
 api_router.include_router(resume.router)
 api_router.include_router(jobs.router)
 api_router.include_router(match.router)

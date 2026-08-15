@@ -49,6 +49,16 @@ def get_hr_users(db: Session) -> list[User]:
     )
 
 
+def get_career_users(db: Session) -> list[User]:
+    """Return all career accounts, including deactivated accounts, for admins."""
+    return (
+        db.query(User)
+        .filter(User.role == "user")
+        .order_by(User.created_at.desc())
+        .all()
+    )
+
+
 def create_user(
     db: Session,
     user_data: UserCreate,

@@ -129,6 +129,9 @@ def _with_relations(query):
 def get_match_result_by_id(db: Session, match_id: UUID):
     return (
         _with_relations(db.query(MatchResult))
+        .join(Resume, MatchResult.resume_id == Resume.id)
+        .join(User, Resume.user_id == User.id)
+        .filter(User.role != "user")
         .filter(MatchResult.id == match_id)
         .first()
     )
@@ -137,6 +140,9 @@ def get_match_result_by_id(db: Session, match_id: UUID):
 def get_all_match_results(db: Session, limit: int = 100):
     return (
         _with_relations(db.query(MatchResult))
+        .join(Resume, MatchResult.resume_id == Resume.id)
+        .join(User, Resume.user_id == User.id)
+        .filter(User.role != "user")
         .order_by(MatchResult.created_at.desc())
         .limit(limit)
         .all()
@@ -146,7 +152,10 @@ def get_all_match_results(db: Session, limit: int = 100):
 def get_match_results_by_resume(db: Session, resume_id: UUID):
     return (
         _with_relations(db.query(MatchResult))
+        .join(Resume, MatchResult.resume_id == Resume.id)
+        .join(User, Resume.user_id == User.id)
         .filter(MatchResult.resume_id == resume_id)
+        .filter(User.role != "user")
         .order_by(MatchResult.match_score.desc(), MatchResult.created_at.desc())
         .all()
     )
@@ -155,7 +164,10 @@ def get_match_results_by_resume(db: Session, resume_id: UUID):
 def get_match_results_by_job(db: Session, job_id: UUID):
     return (
         _with_relations(db.query(MatchResult))
+        .join(Resume, MatchResult.resume_id == Resume.id)
+        .join(User, Resume.user_id == User.id)
         .filter(MatchResult.job_id == job_id)
+        .filter(User.role != "user")
         .order_by(MatchResult.match_score.desc(), MatchResult.created_at.desc())
         .all()
     )
@@ -174,6 +186,9 @@ def get_checked_resumes_summary(db: Session, limit: int = 500):
             func.max(MatchResult.checked_at).label("last_checked_at"),
             func.max(MatchResult.created_at).label("last_created_at"),
         )
+        .join(Resume, MatchResult.resume_id == Resume.id)
+        .join(User, Resume.user_id == User.id)
+        .filter(User.role != "user")
         .group_by(MatchResult.resume_id)
         .order_by(
             func.coalesce(
@@ -192,7 +207,10 @@ def get_checked_resumes_summary(db: Session, limit: int = 500):
 
     matches = (
         _with_relations(db.query(MatchResult))
+        .join(Resume, MatchResult.resume_id == Resume.id)
+        .join(User, Resume.user_id == User.id)
         .filter(MatchResult.resume_id.in_(resume_ids))
+        .filter(User.role != "user")
         .all()
     )
 
@@ -305,7 +323,10 @@ def get_checks_for_user(db: Session, user_id: UUID, limit: int = 200):
             func.max(MatchResult.checked_at).label("checked_at"),
             func.max(MatchResult.match_score).label("best_score"),
         )
+        .join(Resume, MatchResult.resume_id == Resume.id)
+        .join(User, Resume.user_id == User.id)
         .filter(MatchResult.checked_by_id.isnot(None))
+        .filter(User.role != "user")
         .group_by(MatchResult.checked_by_id, MatchResult.resume_id)
         .order_by(func.max(MatchResult.checked_at).desc().nullslast())
         .limit(limit)
@@ -407,7 +428,10 @@ def get_person_check_detail(db: Session, person_id: UUID, limit: int = 100):
             func.max(MatchResult.checked_at).label("checked_at"),
             func.max(MatchResult.match_score).label("best_score"),
         )
+        .join(Resume, MatchResult.resume_id == Resume.id)
+        .join(User, Resume.user_id == User.id)
         .filter(MatchResult.checked_by_id == person_id)
+        .filter(User.role != "user")
         .group_by(MatchResult.resume_id)
         .order_by(func.max(MatchResult.checked_at).desc().nullslast())
         .limit(limit)

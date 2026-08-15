@@ -15,6 +15,7 @@ from app.schemas.match_result import (
     SimpleChecksResponse,
 )
 from app.services import matching
+from app.services import resume as resume_service
 
 
 router = APIRouter(
@@ -139,6 +140,9 @@ def match_resume_best_job(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_staff),
 ):
+    if not resume_service.get_resume(db, resume_id):
+        raise HTTPException(status_code=404, detail="Resume not found")
+
     try:
         result = matching.calculate_best_match(
             db,
@@ -172,6 +176,9 @@ def match_resume_with_job(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_staff),
 ):
+    if not resume_service.get_resume(db, resume_id):
+        raise HTTPException(status_code=404, detail="Resume not found")
+
     try:
         result = matching.calculate_match(
             db,

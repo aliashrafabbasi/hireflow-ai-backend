@@ -74,7 +74,7 @@ flowchart TD
 
 | Area | What it does |
 |------|----------------|
-| Auth | JWT — **admin** (users + settings) / **hr** (staff APIs) |
+| Auth | JWT — **admin** (users + settings) / **hr** (staff APIs) / **user** (career portal) |
 | Resumes | PDF/DOCX upload → parse → skills + candidate name |
 | Jobs | Create + auto skill analysis |
 | Match | Score vs all jobs; cache; `?force=true`; admin threshold |
@@ -154,10 +154,11 @@ Never commit `.env`.
 | Area | Endpoints |
 |------|-----------|
 | Auth | `POST /auth/login` · `POST /auth/register-admin` (public, once) |
+| User Career | `POST /user-career/register-user` (public) · `POST /user-career/upload-cv` / `GET /user-career/resumes` (user JWT) · `POST /user-career/resumes/{id}/evaluate?option=existing_jobs` (HR-created jobs >60%) or `option=ai_career` (AI career advice) · `POST /user-career/chat` (private career coach) |
 | Resumes | `POST /resumes/upload` · `GET /resumes` · `GET /resumes/{id}` |
 | Jobs | `POST /jobs` · `GET /jobs` · `GET\|DELETE /jobs/{id}` · `POST /jobs/{id}/analyze` |
 | Match | `POST /match/{resume_id}` · `POST /match/{resume_id}/{job_id}` · `GET /match` · `GET /match/by-resume\|by-job/{id}` |
-| Admin | `CRUD /admin/users` · `GET\|PUT /admin/settings` |
+| Admin | `POST\|GET\|DELETE /admin/users` (HR) · `POST\|GET\|DELETE /admin/career-users` (career accounts; `GET /{id}` supported) · `GET\|PUT /admin/settings` |
 | RPA | `POST /rpa/automation/run` · `POST /rpa/show-slack` |
 
 Match payload highlights: `candidate_name`, `best_job`, `qualified_jobs`, `score_threshold`.  

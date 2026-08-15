@@ -76,6 +76,76 @@ def delete_hr(
     return MessageResponse(message="HR user deactivated successfully")
 
 
+@router.post(
+    "/career-users",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_career_user(
+    user_data: UserCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    """Create a career-portal account on behalf of a candidate."""
+    try:
+        return auth_service.register_career_user(db, user_data)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
+
+@router.get(
+    "/career-users",
+    response_model=list[UserResponse],
+)
+def list_career_users(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    """List all career users, including deactivated accounts."""
+    return auth_service.list_career_users(db)
+
+
+@router.get(
+    "/career-users/{user_id}",
+    response_model=UserResponse,
+)
+def get_career_user(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    try:
+        return auth_service.get_career_user(db, user_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+
+
+@router.delete(
+    "/career-users/{user_id}",
+    response_model=MessageResponse,
+)
+def delete_career_user(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    try:
+        auth_service.delete_career_user(db, user_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+
+    return MessageResponse(message="Career user deactivated successfully")
+
+
 @router.get(
     "/settings",
     response_model=SettingsResponse,

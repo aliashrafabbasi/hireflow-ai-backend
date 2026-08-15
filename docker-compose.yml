@@ -19,9 +19,9 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     environment:
-      # One database URL for every environment. Set it to the local PostgreSQL
-      # URL during development or to the Neon URL when deploying.
-      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env before starting Docker Compose}
+      # Source of truth: set DATABASE_URL in .env. If it is omitted, the API
+      # uses the Postgres service in this Compose stack.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-hireflow_user}:${POSTGRES_PASSWORD:-hireflow_password}@db:5432/${POSTGRES_DB:-hireflow_db}}
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env before starting Docker Compose}
       GROQ_API_KEY: ${GROQ_API_KEY:?Set GROQ_API_KEY in .env before starting Docker Compose}
       DEBUG: ${DEBUG:-false}
@@ -32,15 +32,9 @@ services:
       HF_BASE_URL: ${HF_BASE_URL:-http://host.docker.internal:3000}
       SLACK_CHANNEL_URL: ${SLACK_CHANNEL_URL:-}
       RPA_SLOW_MO_MS: ${RPA_SLOW_MO_MS:-120}
-    ports:
-      - "${API_PORT:-8000}:8000"
+    network_mode: host
     volumes:
       - uploads_data:/app/uploads
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      db:
-        condition: service_healthy
     command: >
       sh -c 'alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000'
     healthcheck:

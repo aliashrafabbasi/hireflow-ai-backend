@@ -50,8 +50,42 @@ def create_hr_user(
     )
 
 
+def register_career_user(
+    db: Session,
+    user_data: UserCreate,
+):
+    """Create a public career-portal account with the user role."""
+    existing_user = user_repository.get_user_by_email(
+        db,
+        user_data.email,
+    )
+    if existing_user:
+        raise ValueError("Email already registered")
+
+    return user_repository.create_user(
+        db,
+        user_data,
+        hash_password(user_data.password),
+        role="user",
+    )
+
+
 def list_hr_users(db: Session):
     return user_repository.get_hr_users(db)
+
+
+def list_career_users(db: Session):
+    return user_repository.get_career_users(db)
+
+
+def get_career_user(
+    db: Session,
+    user_id,
+):
+    user = user_repository.get_user_by_id(db, user_id)
+    if not user or user.role != "user":
+        raise ValueError("Career user not found")
+    return user
 
 
 def delete_hr_user(
@@ -68,6 +102,18 @@ def delete_hr_user(
 
     if not user.is_active:
         raise ValueError("HR user is already deactivated")
+
+    return user_repository.soft_delete_user(db, user)
+
+
+def delete_career_user(
+    db: Session,
+    user_id,
+):
+    user = get_career_user(db, user_id)
+
+    if not user.is_active:
+        raise ValueError("Career user is already deactivated")
 
     return user_repository.soft_delete_user(db, user)
 

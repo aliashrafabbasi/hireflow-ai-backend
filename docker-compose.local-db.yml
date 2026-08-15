@@ -3,5 +3,7 @@
 services:
   api:
     network_mode: host
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env before starting Docker Compose}
     ports: !reset []
     extra_hosts: !reset []
