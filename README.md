@@ -106,27 +106,76 @@ First admin (once): `POST /api/v1/auth/register-admin`
 
 Frontend (separate repo) should be on `HF_BASE_URL` (default `http://localhost:3000`) with the same staff login as `HF_EMAIL` / `HF_PASSWORD`.
 
-## Docker
+## Docker (recommended)
 
-Copy the example configuration and set real secret values before starting:
+**One-time setup:**
 
 ```bash
 cp .env.example .env
-# Set SECRET_KEY and GROQ_API_KEY in .env
-docker compose up --build
+# Edit .env: DATABASE_URL (pgAdmin credentials), SECRET_KEY, GROQ_API_KEY, HF_*
+chmod +x start.sh
 ```
 
-This starts PostgreSQL and the API at `http://localhost:8000`; migrations run automatically before the API starts. Database data and uploaded resumes use named Docker volumes.
-
-To also start n8n, add a long random `N8N_ENCRYPTION_KEY` to `.env`, then run:
+**Every day — start the backend:**
 
 ```bash
-docker compose --profile automation up --build
+docker compose up -d
+# or
+./start.sh
 ```
 
-Import either workflow from `n8n/` after n8n is available at `http://localhost:5678`. The Docker versions use `http://api:8000`, the internal Compose hostname, instead of `127.0.0.1`.
+**After you change backend code:**
 
-RPA is disabled by default. To enable it in Docker, set `RPA_ENABLED=true`, `RPA_HEADLESS=true`, valid staff credentials, and `HF_BASE_URL`. On Linux/macOS the default `HF_BASE_URL` reaches a frontend running on the host through `host.docker.internal`. A headed/visible browser cannot be displayed on the host desktop from this container setup.
+```bash
+docker compose up --build -d
+# or
+./start.sh --build
+```
+
+**With n8n automation:**
+
+```bash
+./start.sh --n8n
+# or: docker compose --profile automation up -d
+```
+
+**With visible RPA browser (Linux desktop):**
+
+```bash
+./start.sh --rpa --build
+```
+
+| Service | URL |
+|---------|-----|
+| API / OpenAPI | http://localhost:8000/docs |
+| Health | `GET /api/v1/health` |
+| Frontend | http://localhost:3000 (separate repo, `npm run dev`) |
+| pgAdmin | Host `localhost`, port `5432`, DB `hireflow_db` |
+| n8n | http://localhost:5678 (with `--profile automation`) |
+
+The API uses your **local PostgreSQL** via `DATABASE_URL` in `.env` (`127.0.0.1:5432`). Migrations run automatically on start. Uploaded files are stored in a Docker volume.
+
+Optional: if you do not have PostgreSQL on the host, start the bundled DB with `docker compose --profile bundled-db up -d` and point `DATABASE_URL` at port `5433`.
+
+### Show the RPA browser on Linux
+
+The API logs shown as `api-1` mean the RPA runs *inside Docker*. A browser can only appear on your desktop when it is headed and allowed to use the host X11 display:
+
+```bash
+# Or use the helper script (runs xhost +local: automatically when RPA is headed):
+./start.sh --rpa --build
+
+# Ensure .env contains:
+# RPA_ENABLED=true
+# RPA_HEADLESS=false
+# DISPLAY=:0
+# HF_EMAIL=your-staff-login
+# HF_PASSWORD=your-staff-password
+# HF_BASE_URL=http://localhost:3000
+docker compose up -d
+```
+
+The Compose file mounts `/tmp/.X11-unix` and passes `DISPLAY` into the API container. The frontend can stay outside Docker: because the API has host networking, set `HF_BASE_URL=http://localhost:3000`. This is suitable for a local demo machine; run `xhost -local:` afterwards to remove the temporary X11 permission. For Wayland-only desktops or production deployments, run the API/RPA process directly on the desktop host (or keep `RPA_HEADLESS=true`) instead.
 
 ---
 
@@ -139,6 +188,7 @@ See [`.env.example`](.env.example). Important keys:
 | `DATABASE_URL` | PostgreSQL |
 | `SECRET_KEY` | JWT signing |
 | `GROQ_API_KEY` | LLM |
+| `GROQ_MODEL` | Groq chat model (default `openai/gpt-oss-120b`) |
 | `RPA_ENABLED` | Enable `/rpa/*` |
 | `HF_EMAIL` / `HF_PASSWORD` | UI login for Playwright |
 | `HF_BASE_URL` | Frontend origin |
@@ -184,6 +234,7 @@ flowchart LR
 | Trigger | Gmail Trigger — silent poll; **execution only when mail matches** |
 | Latency | Poll ticks `:00,:10,:20,:30,:40,:50` → start within ~10s |
 | Filter | Unread + attachment (`pdf` / `docx` / `doc`) |
+| Slack eligibility | One message for the single highest job match only when its score is ≥60%; below 60% sends no success Slack message |
 | Name on Slack | Scraped HireFlow name; UUID filenames rejected |
 | Legacy | [`n8n/hireflow-resume-automation.json`](n8n/hireflow-resume-automation.json) = API-only (no browser) |
 
@@ -214,7 +265,9 @@ uploads/              # runtime files (gitignored)
 |-------|-----|
 | `401` | Re-login; `Authorization: Bearer …` |
 | Groq `429` | Pipeline keeps going via fallbacks; wait or upgrade quota |
+| No `/rpa/automation/run` line in API logs | Re-import the updated workflow and activate it; local n8n calls `localhost:8000` |
 | RPA disabled | `RPA_ENABLED=true` + valid `HF_*` |
+| Browser does not appear | `RPA_HEADLESS=false`, run `xhost +local:`, then recreate the API container; see **Show the RPA browser on Linux** |
 | Browser blank / wrong host | Frontend up; `HF_BASE_URL` matches |
 | Slack shows UUID name | Re-run with published RPA workflow; name comes from UI extract |
 | n8n “poll too short” | Don’t use `*/10 * * * * *`; use `0,10,20,30,40,50 * * * * *` |

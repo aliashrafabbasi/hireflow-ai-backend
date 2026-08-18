@@ -54,6 +54,22 @@ def _type_visible(page_obj, selector: str, text: str, *, delay_ms: int = 55) -> 
     page_obj.wait_for_timeout(250)
 
 
+def _submit_login(page_obj) -> None:
+    """Submit the login form without depending solely on its accessible label.
+
+    Some frontend component libraries render the visible "Enter console" text
+    without exposing the expected button role to Playwright. The native submit
+    control is the most stable target; text is kept as a fallback.
+    """
+    submit = page_obj.locator(
+        "form button[type='submit'], button[type='submit']"
+    ).first
+    if submit.count() == 0:
+        submit = page_obj.get_by_text("Enter console", exact=False).first
+    submit.wait_for(state="visible", timeout=30000)
+    submit.click(timeout=30000)
+
+
 def _os_raise_window(*, pin_on_top: bool = True) -> None:
     """Force Chromium above whatever app the user is currently using."""
     if shutil.which("wmctrl"):
@@ -114,19 +130,48 @@ def _unpin_window() -> None:
         pass
 
 
+def _x11_setup_hint() -> str:
+    return (
+        "Headed RPA cannot reach your desktop display. On the host run "
+        "`xhost +local:` then recreate the API container, or use "
+        "`./scripts/docker-up-rpa.sh up --build`. For unattended runs set "
+        "RPA_HEADLESS=true in .env."
+    )
+
+
+def _is_x11_launch_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    needles = (
+        "x server",
+        "xserver",
+        "missing x server",
+        "authorization required",
+        "ozone_platform_x11",
+    )
+    return any(n in msg for n in needles)
+
+
 def _launch_browser(p, *, headless: bool, slow_mo: int):
     launch_env = os.environ.copy()
     launch_env.setdefault("GDK_BACKEND", "x11")
-    browser = p.chromium.launch(
-        headless=headless,
-        slow_mo=slow_mo,
-        env=launch_env,
-        args=[
-            f"--window-size={_WINDOW_W},{_WINDOW_H}",
-            "--window-position=80,60",
-            "--disable-features=CalculateNativeWinOcclusion",
-        ],
-    )
+    launch_args = [
+        f"--window-size={_WINDOW_W},{_WINDOW_H}",
+        "--window-position=80,60",
+        "--disable-features=CalculateNativeWinOcclusion",
+        # Required when Chromium runs inside Docker as a non-root user.
+        "--no-sandbox",
+    ]
+    try:
+        browser = p.chromium.launch(
+            headless=headless,
+            slow_mo=slow_mo,
+            env=launch_env,
+            args=launch_args,
+        )
+    except Exception as exc:
+        if not headless and _is_x11_launch_error(exc):
+            raise RuntimeError(_x11_setup_hint()) from exc
+        raise
     context = browser.new_context(
         viewport={"width": _WINDOW_W - 16, "height": _WINDOW_H - 88},
     )
@@ -220,7 +265,7 @@ def run_visible_flow(
             page.wait_for_selector('input[type="email"]')
             _type_visible(page, 'input[type="email"]', email, delay_ms=55)
             _type_visible(page, 'input[type="password"]', password, delay_ms=60)
-            page.get_by_role("button", name="Enter console").click()
+            _submit_login(page)
             page.wait_for_url("**/dashboard**", timeout=45000)
             _focus(page, 800)
 

@@ -4,6 +4,7 @@ from uuid import UUID
 from groq import RateLimitError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.exceptions import LLMRateLimitError
 from app.models.user import User
 from app.prompts.career_prompt import CAREER_ANALYSIS_PROMPT
@@ -79,7 +80,7 @@ def get_ai_career_suggestions(
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=settings.GROQ_MODEL,
             messages=[
                 {"role": "system", "content": CAREER_ANALYSIS_PROMPT},
                 {
@@ -137,7 +138,7 @@ def chat_with_career_coach(
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=settings.GROQ_MODEL,
             messages=messages,
             temperature=0.35,
         )

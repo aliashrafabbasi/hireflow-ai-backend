@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import api_router
 from app.core.config import settings
+from app.core.logging_config import silence_health_access_logs
+
+silence_health_access_logs()
 
 app = FastAPI(
     title=settings.APP_NAME,

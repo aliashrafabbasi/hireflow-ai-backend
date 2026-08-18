@@ -3,6 +3,7 @@ import re
 
 from groq import RateLimitError
 
+from app.core.config import settings
 from app.prompts.match_prompt import MATCH_ANALYSIS_PROMPT
 from app.services.llm import client
 
@@ -91,7 +92,7 @@ def analyze_match(
 
     try:
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=settings.GROQ_MODEL,
             messages=[
                 {
                     "role": "system",

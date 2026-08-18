@@ -42,7 +42,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://api:8000/api/v1/auth/login",
+        "url": "http://localhost:8000/api/v1/auth/login",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "{\n  \"email\": \"aiautomation@gmail.com\",\n  \"password\": \"abc123\"\n}",
@@ -69,7 +69,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://api:8000/api/v1/rpa/automation/run",
+        "url": "http://localhost:8000/api/v1/rpa/automation/run",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -117,7 +117,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function looksLikeUuidName(name) {\n  if (!name) return true;\n  const compact = String(name).replace(/[\\s-]/g, '');\n  return /^[0-9a-f]{32}$/i.test(compact);\n}\n\nconst data = $input.first().json || {};\nif (!data.ok) {\n  throw new Error(data.error || data.detail?.error || 'Visible RPA failed');\n}\nif (!data.best_job_title || !data.best_score) {\n  throw new Error(data.message || 'Match score missing — not sending success Slack');\n}\n\nconst meta = $('Extract Resume Attachments').first().json;\nconst token = $('Attach Token + Resume').first().json.access_token;\n\nconst rawName = data.candidate_name || meta.candidateName || '';\nconst candidate = looksLikeUuidName(rawName) ? 'Unknown Candidate' : String(rawName).trim();\nconst best = data.best_job_title;\nconst company = data.company || 'N/A';\nconst score = data.best_score;\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `👋 *Dear HR Team,*`,\n  ``,\n  `A new candidate resume just landed in HireFlow and has been screened against our open roles.`,\n  ``,\n  `*Candidate:* ${candidate}`,\n  `*Resume file:* ${data.resume_filename || meta.fileName || 'N/A'}`,\n  `*Received from:* ${meta.emailFrom || data.email_from || 'N/A'}`,\n  `*Email subject:* ${meta.emailSubject || data.email_subject || '(no subject)'}`,\n  ``,\n  `*Best matched job*`,\n  `• *${best}* @ ${company}`,\n  `  Match score: *${score}*`,\n  ``,\n  `_Please review this candidate and proceed with shortlisting if it looks like a fit._`,\n].join('\\n');\n\nreturn [{ json: { text, access_token: token, ...data, candidate_name: candidate } }];"
+        "jsCode": "function looksLikeUuidName(name) {\n  if (!name) return true;\n  const compact = String(name).replace(/[\\s-]/g, '');\n  return /^[0-9a-f]{32}$/i.test(compact);\n}\n\nconst data = $input.first().json || {};\nif (!data.ok) {\n  throw new Error(data.error || data.detail?.error || 'Visible RPA failed');\n}\nif (!data.best_job_title || !data.best_score) {\n  throw new Error(data.message || 'Match score missing — not sending success Slack');\n}\n\n// RPA returns one best job only. Do not notify HR unless that best score is ≥60%.\nconst numericScore = Number(String(data.best_score).replace(/[^0-9.]/g, ''));\nif (!Number.isFinite(numericScore)) {\n  throw new Error(`Invalid best-match score: ${data.best_score}`);\n}\nif (numericScore < 60) {\n  // Returning no items ends the success branch silently: no Slack message is sent.\n  return [];\n}\n\nconst meta = $('Extract Resume Attachments').first().json;\nconst token = $('Attach Token + Resume').first().json.access_token;\n\nconst rawName = data.candidate_name || meta.candidateName || '';\nconst candidate = looksLikeUuidName(rawName) ? 'Unknown Candidate' : String(rawName).trim();\nconst best = data.best_job_title;\nconst company = data.company || 'N/A';\nconst score = data.best_score;\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `👋 *Dear HR Team,*`,\n  ``,\n  `A new candidate resume just landed in HireFlow and has been screened against our open roles.`,\n  ``,\n  `*Candidate:* ${candidate}`,\n  `*Resume file:* ${data.resume_filename || meta.fileName || 'N/A'}`,\n  `*Received from:* ${meta.emailFrom || data.email_from || 'N/A'}`,\n  `*Email subject:* ${meta.emailSubject || data.email_subject || '(no subject)'}`,\n  ``,\n  `*Best matched job*`,\n  `• *${best}* @ ${company}`,\n  `  Match score: *${score}*`,\n  `_Other open roles were also assessed; only the highest match is shown._`,\n  ``,\n  `_Please review this candidate and proceed with shortlisting if it looks like a fit._`,\n].join('\\n');\n\nreturn [{ json: { text, access_token: token, ...data, candidate_name: candidate } }];"
       },
       "id": "format-slack",
       "name": "Format Slack Message",
@@ -145,7 +145,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://api:8000/api/v1/rpa/show-slack",
+        "url": "http://localhost:8000/api/v1/rpa/show-slack",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -172,7 +172,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function pickError(raw) {\n  if (raw == null) return 'Unknown error';\n  if (typeof raw === 'string') return raw;\n  if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);\n\n  const detail =\n    raw.detail?.error ||\n    raw.detail ||\n    raw.message ||\n    raw.error?.message ||\n    raw.error ||\n    raw.description ||\n    raw.statusMessage ||\n    null;\n\n  if (typeof detail === 'string') return detail;\n  if (detail && typeof detail === 'object') {\n    try { return JSON.stringify(detail); } catch { /* ignore */ }\n  }\n\n  try {\n    return JSON.stringify(raw);\n  } catch {\n    return String(raw);\n  }\n}\n\nconst err = $input.first().json || {};\nconst node =\n  err.node?.name ||\n  err.node ||\n  err.name ||\n  'Open Browser + Run HireFlow';\n\nconst msg = pickError(err);\nconst token = (() => {\n  try { return $('Attach Token + Resume').first().json.access_token; } catch { return null; }\n})();\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `🚨 *HireFlow Automation Failed*`,\n  ``,\n  `*Node:* ${node}`,\n  `*Error:* ${msg}`,\n  `*Time:* ${new Date().toISOString()}`,\n  ``,\n  `_Open n8n → Executions → open this run → click failed node._`,\n].join('\\n');\n\nreturn [{ json: { text, node, error: msg, access_token: token } }];"
+        "jsCode": "function pickError(raw) {\n  if (raw == null) return 'Unknown error';\n  if (typeof raw === 'string') return raw;\n  if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);\n\n  // FastAPI HTTPException body: { detail: { error, trace } } or { detail: \"...\" }\n  const detail = raw.detail;\n  if (typeof detail === 'string') return detail;\n  if (detail && typeof detail === 'object') {\n    if (detail.error) return String(detail.error);\n    try { return JSON.stringify(detail); } catch { /* ignore */ }\n  }\n\n  const nested =\n    raw.error?.description ||\n    raw.error?.message ||\n    raw.message ||\n    raw.description ||\n    raw.statusMessage ||\n    null;\n  if (typeof nested === 'string') {\n    try {\n      const parsed = JSON.parse(nested);\n      if (parsed?.detail?.error) return String(parsed.detail.error);\n      if (typeof parsed?.detail === 'string') return parsed.detail;\n    } catch { /* plain text */ }\n    return nested;\n  }\n\n  try {\n    return JSON.stringify(raw);\n  } catch {\n    return String(raw);\n  }\n}\n\nconst err = $input.first().json || {};\nconst node =\n  err.node?.name ||\n  err.node ||\n  err.name ||\n  'Open Browser + Run HireFlow';\n\nconst msg = pickError(err);\nconst token = (() => {\n  try { return $('Attach Token + Resume').first().json.access_token; } catch { return null; }\n})();\n\nconst text = [\n  `<!channel>`,\n  ``,\n  `🚨 *HireFlow Automation Failed*`,\n  ``,\n  `*Node:* ${node}`,\n  `*Error:* ${msg}`,\n  `*Time:* ${new Date().toISOString()}`,\n  ``,\n  `_Open n8n → Executions → open this run → click failed node._`,\n].join('\\n');\n\nreturn [{ json: { text, node, error: msg, access_token: token } }];"
       },
       "id": "format-error",
       "name": "Format Error Slack",
@@ -200,7 +200,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://api:8000/api/v1/rpa/show-slack",
+        "url": "http://localhost:8000/api/v1/rpa/show-slack",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

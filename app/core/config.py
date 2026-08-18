@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     GROQ_API_KEY: str
+    # Groq retired llama-3.3-70b-versatile on 2026-08-16; gpt-oss-120b is the replacement.
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
 
     # Visible browser RPA (n8n email → Playwright on this machine)
     RPA_ENABLED: bool = True

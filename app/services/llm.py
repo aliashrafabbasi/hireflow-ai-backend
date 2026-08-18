@@ -17,7 +17,7 @@ def analyze_resume(
 ) -> dict:
     try:
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=settings.GROQ_MODEL,
             messages=[
                 {
                     "role": "system",
@@ -47,7 +47,7 @@ def analyze_job_description(
 ) -> dict:
     try:
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=settings.GROQ_MODEL,
             messages=[
                 {
                     "role": "system",
