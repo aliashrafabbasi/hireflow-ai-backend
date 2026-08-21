@@ -1,8 +1,11 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from uuid import UUID
 import re
 
 from sqlalchemy.orm import Session
 
+from app.models.job import Job
+from app.models.match_result import MatchResult
 from app.models.user import User
 from app.repositories import resume as resume_repository
 from app.repositories import resume_skill as resume_skill_repository
@@ -10,7 +13,7 @@ from app.repositories import job as job_repository
 from app.repositories import job_skill as job_skill_repository
 from app.repositories import match_result as match_result_repository
 from app.repositories import settings as settings_repository
-from app.services.match_analyzer import analyze_match
+from app.services.match_analyzer import analyze_match, skill_overlap_match
 
 
 def _normalize_skills(skills) -> list[str]:
@@ -18,7 +21,7 @@ def _normalize_skills(skills) -> list[str]:
     normalized: list[str] = []
 
     for skill in skills:
-        name = (skill.skill or "").strip()
+        name = (getattr(skill, "skill", None) or str(skill) or "").strip()
         if not name:
             continue
 
@@ -115,26 +118,41 @@ def calculate_match(
     job_id: UUID,
     force: bool = False,
     checked_by_id: UUID | None = None,
+    resume_skills: list[str] | None = None,
+    job: Job | None = None,
+    job_skills: list[str] | None = None,
+    existing_match: MatchResult | None = None,
+    commit: bool = True,
 ):
     # Reuse cached match to avoid burning LLM tokens
     if not force:
-        existing = match_result_repository.get_match_result(
-            db, resume_id, job_id
+        existing = (
+            existing_match
+            if existing_match is not None
+            else match_result_repository.get_match_result(db, resume_id, job_id)
         )
         if existing:
             if checked_by_id is not None:
                 existing = match_result_repository.touch_checked_by(
-                    db, existing, checked_by_id
+                    db, existing, checked_by_id, commit=commit
                 )
             return existing
 
-    resume_skills = _normalize_skills(
-        resume_skill_repository.get_resume_skills(db, resume_id)
-    )
-    job_skills = _normalize_skills(
-        job_skill_repository.get_job_skills(db, job_id)
-    )
-    job = job_repository.get_job_by_id(db, job_id)
+    if resume_skills is None:
+        resume_skills = _normalize_skills(
+            resume_skill_repository.get_resume_skills(db, resume_id)
+        )
+
+    if job is None:
+        job = job_repository.get_job_by_id(db, job_id)
+
+    if job_skills is None:
+        if job and getattr(job, "skills", None):
+            job_skills = _normalize_skills(job.skills)
+        else:
+            job_skills = _normalize_skills(
+                job_skill_repository.get_job_skills(db, job_id)
+            )
 
     if not job_skills:
         return match_result_repository.upsert_match_result(
@@ -147,6 +165,8 @@ def calculate_match(
             "No required skills were found for this job.",
             [],
             checked_by_id=checked_by_id,
+            commit=commit,
+            existing=existing_match,
         )
 
     try:
@@ -159,8 +179,6 @@ def calculate_match(
         )
     except Exception:
         # Last-resort local score if analyzer raises unexpectedly.
-        from app.services.match_analyzer import skill_overlap_match
-
         analysis = skill_overlap_match(
             resume_skills,
             job_skills,
@@ -189,6 +207,8 @@ def calculate_match(
         analysis.get("explanation"),
         analysis.get("recommendations") or [],
         checked_by_id=checked_by_id,
+        commit=commit,
+        existing=existing_match,
     )
 
 
@@ -197,6 +217,8 @@ def calculate_best_match(
     resume_id: UUID,
     force: bool = False,
     checked_by_id: UUID | None = None,
+    checked_by_name: str | None = None,
+    top_llm_k: int = 5,
 ):
     resume = resume_repository.get_resume_by_id(db, resume_id)
     if not resume:
@@ -208,30 +230,176 @@ def calculate_best_match(
 
     threshold = settings_repository.get_match_score_threshold(db)
 
-    summaries = []
+    # 1. Pre-fetch resume skills once for all candidate jobs
+    resume_skills = _normalize_skills(
+        resume_skill_repository.get_resume_skills(db, resume_id)
+    )
+
+    # 2. Pre-fetch existing cached matches for this resume in a single query
+    cached_map = match_result_repository.get_match_results_by_resume_map(
+        db, resume_id
+    )
+
+    # 3. Fast in-memory heuristic pre-filter and candidate ranking
+    job_items = []
     for job in jobs:
-        match = calculate_match(
-            db,
-            resume_id,
-            job.id,
-            force=force,
-            checked_by_id=checked_by_id,
+        j_skills = (
+            _normalize_skills(job.skills)
+            if getattr(job, "skills", None)
+            else []
         )
-        full = match_result_repository.get_match_result_by_id(db, match.id)
-        row = full or match
-        job_obj = getattr(row, "job", None) or job
+        cached_row = cached_map.get(job.id)
+
+        # Compute deterministic skill overlap
+        heuristic = skill_overlap_match(
+            resume_skills,
+            j_skills,
+            job_title=job.title,
+        )
+        h_score = float(heuristic.get("match_score") or 0.0)
+
+        needs_eval = force or (cached_row is None)
+        job_items.append(
+            {
+                "job": job,
+                "job_skills": j_skills,
+                "cached_row": cached_row,
+                "heuristic": heuristic,
+                "heuristic_score": h_score,
+                "needs_eval": needs_eval,
+            }
+        )
+
+    # Rank uncached jobs by skill overlap to select the top K relevant jobs for LLM
+    to_evaluate = [item for item in job_items if item["needs_eval"]]
+    to_evaluate.sort(key=lambda x: x["heuristic_score"], reverse=True)
+
+    llm_candidates = to_evaluate[:top_llm_k]
+
+    # 4. Parallel LLM execution with bounded concurrency (3 concurrent workers)
+    llm_results = {}
+    if llm_candidates:
+        def _run_llm_analysis(candidate):
+            j = candidate["job"]
+            j_skills = candidate["job_skills"]
+            if not j_skills:
+                return j.id, {
+                    "match_score": 0.0,
+                    "matched_skills": [],
+                    "missing_skills": [],
+                    "explanation": "No required skills were found for this job.",
+                    "recommendations": [],
+                }
+            try:
+                analysis = analyze_match(
+                    resume_skills,
+                    j_skills,
+                    job_title=j.title,
+                    job_company=j.company,
+                    job_description=j.description,
+                )
+            except Exception:
+                # Graceful fallback to deterministic match if rate-limited or error
+                analysis = skill_overlap_match(
+                    resume_skills,
+                    j_skills,
+                    job_title=j.title,
+                )
+            return j.id, analysis
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            future_to_job = {
+                executor.submit(_run_llm_analysis, c): c for c in llm_candidates
+            }
+            for future in as_completed(future_to_job):
+                try:
+                    j_id, res = future.result()
+                    llm_results[j_id] = res
+                except Exception:
+                    c = future_to_job[future]
+                    j = c["job"]
+                    llm_results[j.id] = c["heuristic"]
+
+    # 5. Persist / update match rows and build summaries in memory (no N+1 joins)
+    summaries = []
+    has_db_changes = False
+
+    for item in job_items:
+        job = item["job"]
+        j_skills = item["job_skills"]
+        cached_row = item["cached_row"]
+
+        if not item["needs_eval"] and cached_row is not None:
+            # Reuse cached match
+            if checked_by_id is not None:
+                cached_row = match_result_repository.touch_checked_by(
+                    db, cached_row, checked_by_id, commit=False
+                )
+                has_db_changes = True
+            row = cached_row
+        elif job.id in llm_results:
+            # Result from LLM analysis
+            analysis = llm_results[job.id]
+            matched_skills = analysis.get("matched_skills") or []
+            missing_skills = analysis.get("missing_skills") or []
+            score = analysis.get("match_score")
+            if score is None:
+                score = (
+                    (len(matched_skills) / len(j_skills)) * 100
+                    if j_skills
+                    else 0.0
+                )
+            score = round(float(score), 2)
+            row = match_result_repository.upsert_match_result(
+                db,
+                resume_id,
+                job.id,
+                score,
+                matched_skills,
+                missing_skills,
+                analysis.get("explanation"),
+                analysis.get("recommendations") or [],
+                checked_by_id=checked_by_id,
+                commit=False,
+                existing=cached_row,
+            )
+            has_db_changes = True
+        else:
+            # Result from fast heuristic evaluation (outside top K candidates)
+            analysis = item["heuristic"]
+            matched_skills = analysis.get("matched_skills") or []
+            missing_skills = analysis.get("missing_skills") or []
+            score = round(float(analysis.get("match_score") or 0.0), 2)
+            row = match_result_repository.upsert_match_result(
+                db,
+                resume_id,
+                job.id,
+                score,
+                matched_skills,
+                missing_skills,
+                analysis.get("explanation"),
+                analysis.get("recommendations") or [],
+                checked_by_id=checked_by_id,
+                commit=False,
+                existing=cached_row,
+            )
+            has_db_changes = True
 
         summaries.append(
             {
                 "job_id": row.job_id,
-                "job_title": job_obj.title,
-                "company": job_obj.company,
+                "job_title": job.title,
+                "company": job.company,
                 "match_score": row.match_score,
                 "matched_skills": row.matched_skills or [],
                 "missing_skills": row.missing_skills or [],
                 "summary": row.explanation,
             }
         )
+
+    # 6. Single batch commit for all changes
+    if has_db_changes:
+        db.commit()
 
     summaries.sort(key=lambda m: m["match_score"], reverse=True)
     best = summaries[0]
@@ -240,8 +408,8 @@ def calculate_best_match(
     if not qualified:
         qualified = [best]
 
-    checker_name = None
-    if checked_by_id is not None:
+    checker_name = checked_by_name
+    if checker_name is None and checked_by_id is not None:
         user = db.query(User).filter(User.id == checked_by_id).first()
         checker_name = user.full_name if user else None
 

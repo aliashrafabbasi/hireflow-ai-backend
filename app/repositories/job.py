@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.job import Job
 from app.schemas.job import JobCreate
@@ -26,7 +26,12 @@ def create_job(
 def get_jobs(
     db: Session,
 ):
-    return db.query(Job).all()
+    return (
+        db.query(Job)
+        .options(joinedload(Job.skills))
+        .order_by(Job.created_at.desc())
+        .all()
+    )
 
 
 def get_job_by_id(
@@ -35,6 +40,7 @@ def get_job_by_id(
 ):
     return (
         db.query(Job)
+        .options(joinedload(Job.skills))
         .filter(Job.id == job_id)
         .first()
     )

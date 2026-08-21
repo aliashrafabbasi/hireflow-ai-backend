@@ -19,16 +19,19 @@ def upsert_match_result(
     explanation: str = None,
     recommendations: list[dict] = None,
     checked_by_id: UUID | None = None,
+    commit: bool = True,
+    existing: MatchResult | None = None,
 ):
-    existing = (
-        db.query(MatchResult)
-        .filter(
-            MatchResult.resume_id == resume_id,
-            MatchResult.job_id == job_id,
+    if existing is None:
+        existing = (
+            db.query(MatchResult)
+            .filter(
+                MatchResult.resume_id == resume_id,
+                MatchResult.job_id == job_id,
+            )
+            .order_by(MatchResult.created_at.desc())
+            .first()
         )
-        .order_by(MatchResult.created_at.desc())
-        .first()
-    )
 
     now = datetime.utcnow()
 
@@ -41,8 +44,9 @@ def upsert_match_result(
         if checked_by_id is not None:
             existing.checked_by_id = checked_by_id
             existing.checked_at = now
-        db.commit()
-        db.refresh(existing)
+        if commit:
+            db.commit()
+            db.refresh(existing)
         return existing
 
     match_result = MatchResult(
@@ -59,8 +63,9 @@ def upsert_match_result(
     )
 
     db.add(match_result)
-    db.commit()
-    db.refresh(match_result)
+    if commit:
+        db.commit()
+        db.refresh(match_result)
     return match_result
 
 
@@ -93,12 +98,14 @@ def touch_checked_by(
     db: Session,
     match: MatchResult,
     checked_by_id: UUID,
+    commit: bool = True,
 ):
     """Record who re-checked a cached match without re-scoring."""
     match.checked_by_id = checked_by_id
     match.checked_at = datetime.utcnow()
-    db.commit()
-    db.refresh(match)
+    if commit:
+        db.commit()
+        db.refresh(match)
     return match
 
 
@@ -116,6 +123,19 @@ def get_match_result(
         .order_by(MatchResult.created_at.desc())
         .first()
     )
+
+
+def get_match_results_by_resume_map(
+    db: Session,
+    resume_id: UUID,
+) -> dict[UUID, MatchResult]:
+    """Return in-memory map of job_id -> MatchResult for a resume to avoid per-job cache queries."""
+    results = (
+        db.query(MatchResult)
+        .filter(MatchResult.resume_id == resume_id)
+        .all()
+    )
+    return {r.job_id: r for r in results}
 
 
 def _with_relations(query):

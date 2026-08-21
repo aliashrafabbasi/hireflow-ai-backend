@@ -1,75 +1,29 @@
 services:
+  # -------------------------------------------------------------
+  # HireFlow AI Backend (FastAPI + Alembic)
+  # -------------------------------------------------------------
   api:
     build:
       context: .
-      dockerfile: docker/Dockerfile
-    # Host network lets the API reach PostgreSQL on 127.0.0.1:5432 (pgAdmin local DB).
+      dockerfile: Dockerfile
+    container_name: hireflow_backend
+    # network_mode: host allows:
+    # 1. Direct connection to your local pgAdmin PostgreSQL via 127.0.0.1:5432
+    # 2. Seamless connection to cloud databases like Neon (ep-xyz.neon.tech) in the future
+    # 3. Direct access to port 8000 without port forwarding overhead
     network_mode: host
     environment:
-      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env before starting Docker Compose}
-      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env before starting Docker Compose}
-      GROQ_API_KEY: ${GROQ_API_KEY:?Set GROQ_API_KEY in .env before starting Docker Compose}
+      DATABASE_URL: ${DATABASE_URL:?Please set DATABASE_URL in your .env file}
+      SECRET_KEY: ${SECRET_KEY:-hireflow_ai_super_secret_key_2026_change_in_production}
+      GROQ_API_KEY: ${GROQ_API_KEY}
       GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
-      DEBUG: ${HIREFLOW_DEBUG:-true}
+      DEBUG: ${DEBUG:-true}
       RPA_ENABLED: ${RPA_ENABLED:-false}
-      RPA_HEADLESS: ${RPA_HEADLESS:-false}
-      HF_EMAIL: ${HF_EMAIL:-}
-      HF_PASSWORD: ${HF_PASSWORD:-}
+      RPA_HEADLESS: ${RPA_HEADLESS:-true}
       HF_BASE_URL: ${HF_BASE_URL:-http://localhost:3000}
-      SLACK_CHANNEL_URL: ${SLACK_CHANNEL_URL:-}
-      RPA_SLOW_MO_MS: ${RPA_SLOW_MO_MS:-120}
-      DISPLAY: ${DISPLAY:-:0}
-      XAUTHORITY: /tmp/.Xauthority
     volumes:
       - uploads_data:/app/uploads
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${XAUTHORITY:-${HOME}/.Xauthority}:/tmp/.Xauthority:ro
-    command: >
-      sh -c 'alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000'
-    healthcheck:
-      disable: true
-    restart: unless-stopped
-
-  # Optional Docker PostgreSQL — only if you do NOT use pgAdmin/local Postgres on :5432.
-  db:
-    profiles: ["bundled-db"]
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-hireflow_db}
-      POSTGRES_USER: ${POSTGRES_USER:-hireflow_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hireflow_password}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5433}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-    restart: unless-stopped
-
-  n8n:
-    image: n8nio/n8n:latest
-    profiles: ["automation"]
-    environment:
-      N8N_HOST: ${N8N_HOST:-localhost}
-      N8N_PORT: 5678
-      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
-      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-local-development-only-change-me}
-      GENERIC_TIMEZONE: ${TZ:-UTC}
-    ports:
-      - "${N8N_PORT:-5678}:5678"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - n8n_data:/home/node/.n8n
-    depends_on:
-      api:
-        condition: service_started
     restart: unless-stopped
 
 volumes:
-  postgres_data:
   uploads_data:
-  n8n_data:

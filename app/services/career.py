@@ -13,7 +13,8 @@ from app.repositories import job as job_repository
 from app.repositories import resume as resume_repository
 from app.repositories import resume_skill as resume_skill_repository
 from app.services.llm import client
-from app.services.matching import calculate_match
+from app.repositories import match_result as match_result_repository
+from app.services.matching import _normalize_skills, calculate_match
 
 MATCH_SCORE_THRESHOLD = 60.0
 
@@ -35,9 +36,28 @@ def match_existing_jobs(
     if not jobs:
         raise LookupError("No existing jobs are available")
 
+    resume_skills = _normalize_skills(
+        resume_skill_repository.get_resume_skills(db, resume_id)
+    )
+    cached_map = match_result_repository.get_match_results_by_resume_map(
+        db, resume_id
+    )
+
     qualified_jobs = []
+    has_db_changes = False
+
     for job in jobs:
-        match = calculate_match(db, resume_id, job.id)
+        cached_row = cached_map.get(job.id)
+        match = calculate_match(
+            db,
+            resume_id,
+            job.id,
+            resume_skills=resume_skills,
+            job=job,
+            existing_match=cached_row,
+            commit=False,
+        )
+        has_db_changes = True
         if match.match_score > MATCH_SCORE_THRESHOLD:
             qualified_jobs.append(
                 {
@@ -50,6 +70,9 @@ def match_existing_jobs(
                     "summary": match.explanation,
                 }
             )
+
+    if has_db_changes:
+        db.commit()
 
     qualified_jobs.sort(key=lambda item: item["match_score"], reverse=True)
     if not qualified_jobs:

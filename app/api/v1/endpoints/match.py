@@ -149,6 +149,7 @@ def match_resume_best_job(
             resume_id,
             force=force,
             checked_by_id=current_user.id,
+            checked_by_name=current_user.full_name,
         )
     except LLMRateLimitError as e:
         raise HTTPException(status_code=429, detail=e.message)
